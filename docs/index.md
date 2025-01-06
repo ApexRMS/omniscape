@@ -6,17 +6,6 @@ permalink: /
 ---
 
 # **omniscape** & **omniscapeImpact** SyncroSim
-<img align="right" style="padding: 13px" width="180" src="assets/images/logo/omniscape-sticker.png">
-[![GitHub release](https://img.shields.io/github/v/release/ApexRMS/omniscape.svg?style=for-the-badge&color=d68a06)](https://GitHub.com/ApexRMS/omniscape/releases/) <a href="https://github.com/ApexRMS/omniscape"><img align="middle" style="padding: 1px" width="30" src="assets/images/logo/github-trans2.png"></a> omniscape
-<br>
-[![GitHub release](https://img.shields.io/github/v/release/ApexRMS/omniscapeImpact.svg?style=for-the-badge&color=d68a06)](https://GitHub.com/ApexRMS/omniscapeImpact/releases/)
-<a href="https://github.com/ApexRMS/omniscape"><img align="middle" style="padding: 1px" width="30" src="assets/images/logo/github-trans2.png"></a> omniscapeImpact
-<br>
-<br>
-<br>
-<br>
-<br>
-<br>
 
 ---
 ## ⚠️ **Notice to Users**
@@ -26,6 +15,13 @@ In the meantime, please note that some instructions, references, and/or images m
 
 ---
 
+<br>
+
+<img align="right" style="padding: 13px" width="180" src="assets/images/logo/omniscape-sticker.png">
+[![GitHub release](https://img.shields.io/github/v/release/ApexRMS/omniscape.svg?style=for-the-badge&color=d68a06)](https://GitHub.com/ApexRMS/omniscape/releases/) <a href="https://github.com/ApexRMS/omniscape"><img align="middle" style="padding: 1px" width="30" src="assets/images/logo/github-trans2.png"></a> omniscape
+<br>
+[![GitHub release](https://img.shields.io/github/v/release/ApexRMS/omniscapeImpact.svg?style=for-the-badge&color=d68a06)](https://GitHub.com/ApexRMS/omniscapeImpact/releases/)
+<a href="https://github.com/ApexRMS/omniscape"><img align="middle" style="padding: 1px" width="30" src="assets/images/logo/github-trans2.png"></a> omniscapeImpact
 <br>
 
 ## Omnidirectional landscape connectivity based on circuit theory
