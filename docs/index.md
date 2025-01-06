@@ -12,6 +12,17 @@ permalink: /
 [![GitHub release](https://img.shields.io/github/v/release/ApexRMS/omniscapeImpact.svg?style=for-the-badge&color=d68a06)](https://GitHub.com/ApexRMS/omniscapeImpact/releases/)
 <a href="https://github.com/ApexRMS/omniscape"><img align="middle" style="padding: 1px" width="30" src="assets/images/logo/github-trans2.png"></a> omniscapeImpact
 <br>
+<br>
+
+---
+## ⚠️ **Notice to Users**
+
+The **Getting Started** documentation and associated **Tutorials** for this SyncroSim package currently reflects information for **SyncroSim version 2**. We are in the process of updating these pages to ensure compatibility with **SyncroSim version 3**.
+In the meantime, please note that some instructions, references, and/or images may not fully align with the latest version of SyncroSim. We appreciate your patience as we work to provide updated resources.
+
+---
+
+<br>
 
 ## Omnidirectional landscape connectivity based on circuit theory
 
