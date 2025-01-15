@@ -26,11 +26,11 @@ In the meantime, please note that some instructions, references, and/or images m
 
 ## Omnidirectional landscape connectivity based on circuit theory
 
-**omniscape** SyncroSim is an open-source [SyncroSim](https://syncrosim.com/){:target="_blank"} base package for running [Omniscape.jl](https://docs.circuitscape.org/Omniscape.jl/stable/){:target="_blank"} and calculating omnidirectional landscape connectivity. 
+**omniscape** SyncroSim is an open-source [SyncroSim](https://syncrosim.com/){:target="_blank"} package for running [Omniscape.jl](https://docs.circuitscape.org/Omniscape.jl/stable/){:target="_blank"} and calculating omnidirectional landscape connectivity. 
 
-**omniscape** SyncroSim allows users to run the latest Omniscape.jl code without ever having to interact with Julia directly. Rather, through SyncroSim, users can run an Omniscape analysis using either a Windows user interface or through scripts written in R (using [rsyncrosim](https://syncrosim.com/r-package/){:target="_blank"}) or Python (using [pysyncrosim](https://pysyncrosim.readthedocs.io/en/latest/){:target="_blank"}). For details on model parameters and configurations, see the [Omniscape.jl documentation](https://docs.circuitscape.org/Omniscape.jl/stable/usage/#Settings-and-Options){:target="_blank"}.
+**omniscape** SyncroSim allows users to run the latest Omniscape.jl code without ever having to interact with Julia directly. Rather, through SyncroSim, users can run an Omniscape analysis using either SyncroSim Studio or through scripts written in R (using [rsyncrosim](https://syncrosim.com/r-package/){:target="_blank"}) or Python (using [pysyncrosim](https://pysyncrosim.readthedocs.io/en/latest/){:target="_blank"}). For details on model parameters and configurations, see the [Omniscape.jl documentation](https://docs.circuitscape.org/Omniscape.jl/stable/usage/#Settings-and-Options){:target="_blank"}.
 
-**omniscapeImpact** is an [add-on package](https://docs.syncrosim.com/how_to_guides/package_overview.html){:target="_blank"} to **omniscape** SyncroSim that compares the connectivity outputs of two **omniscape** analyses. For more information, see the [omniscapeImpact tutorial](https://apexrms.github.io/omniscape/tutorials/omniscapeImpact).
+**omniscapeImpact** is [package](https://docs.syncrosim.com/how_to_guides/package_overview.html){:target="_blank"} that compares the connectivity outputs of two **omniscape** analyses. For more information, see the [omniscapeImpact tutorial](https://apexrms.github.io/omniscape/tutorials/omniscapeImpact).
 
 <br> 
 
