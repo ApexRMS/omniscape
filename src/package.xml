@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.2.0" minSyncroSimVersion="3.1.0">
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.3.0" minSyncroSimVersion="3.1.0">
             
       <dataSheet name="juliaConfiguration" displayName="Julia Configuration" dataScope="Library" isSingleRow="True">
           <column name="juliaPath" displayName="Julia executable" dataType="String" isExternalFile="True" allowDbNull="False" externalFileAbsolute="True" />
@@ -42,8 +42,8 @@
       </dataSheet>
 
       <dataSheet name="OutputOptions" displayName="Output Options" isSingleRow="True">
-          <column name="writeRawCurrmap" displayName="Write raw cumulative current map" dataType="Boolean" isOptional="True" defaultValue="1" />
-          <column name="maskNodata" displayName="Mask nodata" dataType="Boolean" isOptional="True" defaultValue="1" />
+          <column name="writeRawCurrmap" displayName="Write raw cumulative current map" dataType="Boolean" isOptional="True" defaultValue="-1" />
+          <column name="maskNodata" displayName="Mask nodata" dataType="Boolean" isOptional="True" defaultValue="-1" />
           <column name="writeAsTif" displayName="Write as tif" dataType="Boolean" isOptional="True" defaultValue="0" />
       </dataSheet>
 

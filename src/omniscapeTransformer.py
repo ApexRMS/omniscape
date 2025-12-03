@@ -145,6 +145,10 @@ if ' ' in juliaConfig.juliaPath.item():
 if not 'julia.exe' in juliaConfig.juliaPath.item():
     sys.exit("The path to the julia executable must contain the 'julia.exe' file.")
 
+if multiprocessing.EnableMultiprocessing.item() == "Yes":
+    if multiprocessing.MaximumJobs.empty or multiprocessing.MaximumJobs.item() < 1:
+        sys.exit("'Maximum Jobs' must be at least 1 when multiprocessing is enabled.")
+
 if requiredData.resistanceFile.item() != requiredData.resistanceFile.item():
     sys.exit("'Resistance file' is required.")
 
@@ -308,7 +312,12 @@ runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
 if ' ' in dataPath:
     sys.exit("Due to julia requirements, the path to the SyncroSim Library may not contain any spaces.")
 
-runOmniscape = jlExe + " " + runFile
+# Add thread specification if multiprocessing is enabled
+if multiprocessing.EnableMultiprocessing.item() == "true":
+    numThreads = int(multiprocessing.MaximumJobs.item())
+    runOmniscape = f"{jlExe} -t {numThreads} {runFile}"
+else:
+    runOmniscape = f"{jlExe} {runFile}"
 
 os.system(runOmniscape)
 
