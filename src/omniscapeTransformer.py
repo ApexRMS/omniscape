@@ -7,375 +7,19 @@ import pysyncrosim as ps
 import pandas as pd
 import sys
 import os
+import time
 import rasterio
+from rasterio import Affine
 import numpy as np
-import xml.etree.ElementTree as ET
-from rasterio.windows import Window
 
-
-# ============================================================================
-# SPATIAL TILING HELPER FUNCTIONS
-# ============================================================================
-
-def detect_multiprocessing(myLibrary):
-    """
-    Detect if running in spatial tiling mode.
-
-    Returns:
-        tuple: (is_tiling, tile_id, all_tile_ids, max_jobs)
-    """
-    lib_path = myLibrary.name
-    lib_filename = os.path.basename(lib_path)
-    lib_name = lib_filename  # Use filename as library name
-
-    ps.environment.update_run_log(f"Checking for tiling mode: lib_name='{lib_name}', lib_filename='{lib_filename}'")
-
-    # Pattern 1: Library name is "Partial" and filename is "library-X.ssim"
-    if lib_name == "Partial" and lib_filename.startswith("library-"):
-        try:
-            tile_id = int(lib_filename.replace("library-", "").replace(".ssim", ""))
-        except ValueError:
-            ps.environment.update_run_log(f"Warning: Could not extract tile ID from filename: {lib_filename}")
-            return (False, None, None, 1)
-
-    # Pattern 2: Library name is "Job-X.ssim" (SyncroSim spatial multiprocessing)
-    elif lib_name.startswith("Job-") and lib_name.endswith(".ssim"):
-        try:
-            tile_id = int(lib_name.replace("Job-", "").replace(".ssim", ""))
-        except ValueError:
-            ps.environment.update_run_log(f"Warning: Could not extract tile ID from library name: {lib_name}")
-            return (False, None, None, 1)
-
-    # No tiling pattern detected
-    else:
-        ps.environment.update_run_log(f"No tiling pattern detected - using full raster extent")
-        return (False, None, None, 1)
-
-    # Parse Jobs.xml to get all tile IDs
-    jobs_xml_path = os.path.join(os.path.dirname(lib_path), "Jobs.xml")
-
-    if not os.path.exists(jobs_xml_path):
-        ps.environment.update_run_log(f"Warning: Jobs.xml not found at {jobs_xml_path}")
-        return (False, None, None, 1)
-
-    tree = ET.parse(jobs_xml_path)
-    root = tree.getroot()
-
-    all_tile_ids = []
-    for job in root.findall("Job"):
-        tid = int(job.get("TileID"))
-        all_tile_ids.append(tid)
-
-    max_jobs = len(all_tile_ids)
-
-    ps.environment.update_run_log(
-        f"Detected tiling mode: Tile {tile_id} of {max_jobs} tiles"
-    )
-
-    return (True, tile_id, all_tile_ids, max_jobs)
-
-
-def isolate_tile(grid_raster, tile_id, other_tile_ids):
-    """
-    Mask grid to isolate current tile.
-
-    Args:
-        grid_raster: rasterio dataset of tile grid
-        tile_id: Current tile ID to isolate
-        other_tile_ids: List of all other tile IDs
-
-    Returns:
-        tuple: (tile_mask, tile_extent)
-            - tile_mask: Boolean array where True = current tile
-            - tile_extent: Bounding box (row_start, row_end, col_start, col_end)
-    """
-    ps.environment.update_run_log(f"[isolate_tile] Reading grid data for tile {tile_id}...")
-    grid_data = grid_raster.read(1)
-
-    ps.environment.update_run_log(f"[isolate_tile] Creating tile mask...")
-    # Create mask: True for current tile, False elsewhere
-    tile_mask = (grid_data == tile_id)
-
-    ps.environment.update_run_log(f"[isolate_tile] Finding bounding box...")
-    # Find bounding box of non-masked pixels
-    rows, cols = np.where(tile_mask)
-
-    if len(rows) == 0:
-        raise ValueError(f"Tile {tile_id} has no valid pixels")
-
-    row_start = rows.min()
-    row_end = rows.max() + 1
-    col_start = cols.min()
-    col_end = cols.max() + 1
-
-    ps.environment.update_run_log(
-        f"[isolate_tile] Tile extent: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}]"
-    )
-
-    return tile_mask, (row_start, row_end, col_start, col_end)
-
-
-def crop_raster_to_tile(input_path, output_path, tile_extent, grid_transform, grid_crs):
-    """
-    Crop raster to tile extent.
-
-    Args:
-        input_path: Path to input raster
-        output_path: Path for cropped raster
-        tile_extent: Tuple (row_start, row_end, col_start, col_end)
-        grid_transform: Affine transform from grid raster
-        grid_crs: CRS from grid raster
-    """
-    ps.environment.update_run_log(f"[crop_raster_to_tile] Cropping {os.path.basename(input_path)}...")
-    row_start, row_end, col_start, col_end = tile_extent
-
-    ps.environment.update_run_log(f"[crop_raster_to_tile] Opening source raster...")
-    with rasterio.open(input_path) as src:
-        # Create window
-        window = Window(col_start, row_start,
-                       col_end - col_start,
-                       row_end - row_start)
-
-        ps.environment.update_run_log(f"[crop_raster_to_tile] Reading windowed data ({window.width}x{window.height})...")
-        # Read windowed data
-        data = src.read(1, window=window)
-
-        # Calculate new transform
-        new_transform = rasterio.windows.transform(window, src.transform)
-
-        ps.environment.update_run_log(f"[crop_raster_to_tile] Writing cropped raster to {os.path.basename(output_path)}...")
-        # Write cropped raster
-        with rasterio.open(
-            output_path,
-            'w',
-            driver='GTiff',
-            height=data.shape[0],
-            width=data.shape[1],
-            count=1,
-            dtype=data.dtype,
-            crs=src.crs,
-            transform=new_transform,
-            nodata=src.nodata,
-            compress='lzw'
-        ) as dst:
-            dst.write(data, 1)
-
-    ps.environment.update_run_log(f"[crop_raster_to_tile] Completed cropping {os.path.basename(input_path)}")
-
-
-def extend_tile_to_full_extent(tile_raster_path, output_path, full_extent, full_transform, full_crs):
-    """
-    Extend tile raster to full analysis extent (critical for SyncroSim merging).
-
-    Args:
-        tile_raster_path: Path to cropped tile raster
-        output_path: Path for extended raster
-        full_extent: Tuple (width, height) of full analysis area
-        full_transform: Affine transform of full analysis area
-        full_crs: CRS of full analysis area
-    """
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Extending {os.path.basename(tile_raster_path)}...")
-    full_width, full_height = full_extent
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Reading tile data...")
-    with rasterio.open(tile_raster_path) as src:
-        tile_data = src.read(1)
-        tile_transform = src.transform
-        nodata = src.nodata
-        dtype = src.dtypes[0]
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Creating full-extent array ({full_width}x{full_height})...")
-    # Create full-extent array filled with nodata
-    if nodata is not None:
-        full_array = np.full((full_height, full_width), nodata, dtype=dtype)
-    else:
-        full_array = np.full((full_height, full_width), np.nan, dtype=dtype)
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Calculating tile position...")
-    # Calculate tile position in full extent
-    # Convert tile origin to row/col in full extent
-    tile_origin_x = tile_transform.c
-    tile_origin_y = tile_transform.f
-
-    full_origin_x = full_transform.c
-    full_origin_y = full_transform.f
-
-    pixel_width = full_transform.a
-    pixel_height = abs(full_transform.e)
-
-    col_offset = int(round((tile_origin_x - full_origin_x) / pixel_width))
-    row_offset = int(round((full_origin_y - tile_origin_y) / pixel_height))
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Placing tile at offset row={row_offset}, col={col_offset}...")
-    # Place tile data into full array
-    tile_height, tile_width = tile_data.shape
-
-    # Bounds checking
-    row_end = min(row_offset + tile_height, full_height)
-    col_end = min(col_offset + tile_width, full_width)
-
-    full_array[row_offset:row_end, col_offset:col_end] = \
-        tile_data[0:(row_end - row_offset), 0:(col_end - col_offset)]
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Writing extended raster...")
-    # Write extended raster
-    with rasterio.open(
-        output_path,
-        'w',
-        driver='GTiff',
-        height=full_height,
-        width=full_width,
-        count=1,
-        dtype=dtype,
-        crs=full_crs,
-        transform=full_transform,
-        nodata=nodata,
-        compress='lzw'
-    ) as dst:
-        dst.write(full_array, 1)
-
-    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Completed extending {os.path.basename(tile_raster_path)}")
-
-
-def calculate_memory_per_job(max_jobs):
-    """
-    Calculate memory allocation per job (WISDM pattern).
-
-    Formula: max(0.5, min(12, 0.6 * totalRAM / maxJobs))
-
-    Args:
-        max_jobs: Number of concurrent jobs
-
-    Returns:
-        float: Memory in GB per job
-    """
-    try:
-        import psutil
-        total_ram_gb = psutil.virtual_memory().total / (1024**3)
-    except:
-        # Fallback: assume 16GB if psutil not available
-        total_ram_gb = 16.0
-        ps.environment.update_run_log("Warning: Could not detect system RAM, assuming 16GB")
-
-    mem_per_job = max(0.5, min(12.0, 0.6 * total_ram_gb / max_jobs))
-
-    ps.environment.update_run_log(
-        f"Memory allocation: {mem_per_job:.1f} GB per job "
-        f"(Total RAM: {total_ram_gb:.1f} GB, Jobs: {max_jobs})"
-    )
-
-    return mem_per_job
-
-
-def buffer_raster(input_path, output_path, buffer_pixels):
-    """
-    Create buffered version of raster (from buffer_implementation_spec.md).
-
-    Args:
-        input_path: Path to input raster
-        output_path: Path for buffered raster
-        buffer_pixels: Number of pixels to buffer on each side
-
-    Returns:
-        dict: Original bounds metadata for later cropping
-            - 'height': Original raster height
-            - 'width': Original raster width
-            - 'transform': Original affine transform
-            - 'bounds': Original geographic bounds
-            - 'crs': Coordinate reference system
-    """
-    ps.environment.update_run_log(f"[buffer_raster] Buffering {os.path.basename(input_path)} by {buffer_pixels} pixels...")
-    with rasterio.open(input_path) as src:
-        ps.environment.update_run_log(f"[buffer_raster] Reading source data ({src.width}x{src.height})...")
-        data = src.read(1)
-
-        ps.environment.update_run_log(f"[buffer_raster] Padding array with edge replication...")
-        # Pad array with edge replication
-        buffered_data = np.pad(data, buffer_pixels, mode='edge')
-
-        ps.environment.update_run_log(f"[buffer_raster] Calculating new transform...")
-        # Calculate new transform (shift origin)
-        old_transform = src.transform
-        new_transform = rasterio.Affine(
-            old_transform.a,  # pixel width
-            old_transform.b,  # rotation
-            old_transform.c - (buffer_pixels * old_transform.a),  # shift left
-            old_transform.d,  # rotation
-            old_transform.e,  # pixel height (negative)
-            old_transform.f - (buffer_pixels * old_transform.e)   # shift up
-        )
-
-        ps.environment.update_run_log(f"[buffer_raster] Writing buffered raster ({buffered_data.shape[1]}x{buffered_data.shape[0]})...")
-        # Write buffered raster
-        with rasterio.open(
-            output_path,
-            'w',
-            driver='GTiff',
-            height=buffered_data.shape[0],
-            width=buffered_data.shape[1],
-            count=1,
-            dtype=src.dtypes[0],
-            crs=src.crs,
-            transform=new_transform,
-            nodata=src.nodata,
-            compress='lzw'
-        ) as dst:
-            dst.write(buffered_data, 1)
-
-        ps.environment.update_run_log(f"[buffer_raster] Completed buffering {os.path.basename(input_path)}")
-
-        # Return original bounds for later cropping
-        return {
-            'height': src.height,
-            'width': src.width,
-            'transform': old_transform,
-            'bounds': src.bounds,
-            'crs': src.crs
-        }
-
-
-def crop_to_original(buffered_path, output_path, original_bounds, buffer_pixels):
-    """
-    Crop buffered output back to original extent.
-
-    Args:
-        buffered_path: Path to buffered raster
-        output_path: Path for cropped output
-        original_bounds: Bounds dict from buffer_raster()
-        buffer_pixels: Buffer size used
-    """
-    ps.environment.update_run_log(f"[crop_to_original] Cropping buffer from {os.path.basename(buffered_path)}...")
-    with rasterio.open(buffered_path) as src:
-        # Create window to extract original extent
-        window = Window(buffer_pixels, buffer_pixels,
-                       original_bounds['width'],
-                       original_bounds['height'])
-
-        ps.environment.update_run_log(f"[crop_to_original] Reading windowed data...")
-        data = src.read(1, window=window)
-
-        ps.environment.update_run_log(f"[crop_to_original] Writing cropped raster ({original_bounds['width']}x{original_bounds['height']})...")
-        # Write cropped raster with original transform
-        with rasterio.open(
-            output_path,
-            'w',
-            driver='GTiff',
-            height=original_bounds['height'],
-            width=original_bounds['width'],
-            count=1,
-            dtype=src.dtypes[0],
-            crs=src.crs,
-            transform=original_bounds['transform'],
-            nodata=src.nodata,
-            compress='lzw'
-        ) as dst:
-            dst.write(data, 1)
-
-    ps.environment.update_run_log(f"[crop_to_original] Completed cropping {os.path.basename(buffered_path)}")
-
-# ============================================================================
-# END SPATIAL TILING HELPER FUNCTIONS
-# ============================================================================
+# Import helper functions
+from helperFunctions import (
+    load_tile_manifest,
+    determine_execution_mode,
+    crop_buffer_from_output,
+    extend_tile_to_full_extent,
+    merge_tile_outputs
+)
 
 
 ps.environment.progress_bar(message="Setting up Scenario", report_type="message")
@@ -420,48 +64,46 @@ outputOptions = myScenario.datasheets(name = "omniscape_OutputOptions")
 multiprocessing = myScenario.datasheets(name = "core_Multiprocessing")
 juliaConfig = myScenario.datasheets(name = "omniscape_juliaConfiguration")
 
-# Load tiling configuration
-tilingOptions = myScenario.datasheets(name="omniscape_TilingOptions")
+# ============================================================================
+# LOAD TILE MANIFEST AND DETERMINE EXECUTION MODE
+# ============================================================================
 
-# Detect if running in tiling mode
-is_tiling, tile_id, all_tile_ids, max_jobs = detect_multiprocessing(myLibrary)
+# Load tile manifest created by prep transformer
+manifest = load_tile_manifest(myScenarioID, wrkDir)
 
-# Load spatial multiprocessing grid if tiling is enabled
-tile_grid_raster = None
-full_extent_info = None
+if manifest is None:
+    # No tiling - run on full extent (traditional mode)
+    ps.environment.update_run_log("No tile manifest found - processing full extent")
+    is_tiling = False
+    mode = "full_extent"
+    tiles_to_process = [None]
+else:
+    # Tiling enabled - determine execution mode
+    ps.environment.update_run_log(f"Tile manifest loaded: {manifest['tile_count']} tiles, buffer={manifest['buffer_pixels']} pixels")
+    is_tiling = True
+    mode, assigned_tile_id, all_tile_ids = determine_execution_mode(myLibrary, manifest)
 
-ps.environment.update_run_log(f"Tiling mode: {is_tiling}, Library name: {os.path.basename(myLibrary.name)}")
-
-if is_tiling:
-    ps.environment.progress_bar(message=f"Processing tile {tile_id} of {max_jobs}", report_type="message")
-
-    # Load tile grid
-    smp_datasheet = myScenario.datasheets(name="core_SpatialMultiprocessing", show_full_paths=True)
-
-    if smp_datasheet.empty or pd.isna(smp_datasheet.MaskFileName.item()):
-        sys.exit(
-            "Tiling mode detected but core_SpatialMultiprocessing datasheet is empty. "
-            "Run PrepMultiprocessing transformer first."
+    if mode == "multiprocessing":
+        # Process only the assigned tile
+        tiles_to_process = [assigned_tile_id]
+        ps.environment.progress_bar(
+            message=f"Processing tile {assigned_tile_id}/{manifest['tile_count']}",
+            report_type="message"
+        )
+    else:
+        # Loop mode: process all tiles sequentially
+        tiles_to_process = all_tile_ids
+        ps.environment.progress_bar(
+            message=f"Processing {len(all_tile_ids)} tiles sequentially",
+            report_type="message"
         )
 
-    grid_path = smp_datasheet.MaskFileName.item()
+# Store original resistance path for output datasheet
+original_resistance_path = requiredDataValidation.resistanceFile.item()
 
-    if not os.path.exists(grid_path):
-        sys.exit(f"Tile grid file not found: {grid_path}")
-
-    tile_grid_raster = rasterio.open(grid_path)
-
-    # Store full extent info for later extension
-    full_extent_info = {
-        'width': tile_grid_raster.width,
-        'height': tile_grid_raster.height,
-        'transform': tile_grid_raster.transform,
-        'crs': tile_grid_raster.crs
-    }
-
-
-
-# If not provided, set default values  -----------------------------------------
+# ============================================================================
+# SET DEFAULT VALUES FOR OPTIONS
+# ============================================================================
 
 if generalOptions.sourceFromResistance.item() == "Yes":
    requiredData.sourceFile = pd.Series("None")
@@ -645,374 +287,337 @@ else:
     reclassTablePath = "None"
 
 
-
-# ============================================================================
-# SPATIAL TILING: CROP INPUTS TO TILE EXTENT
-# ============================================================================
-
-original_resistance_path = requiredDataValidation.resistanceFile.item()
-original_source_path = requiredDataValidation.sourceFile.item() if requiredData.sourceFile.item() != "None" else None
-
-if is_tiling:
-    ps.environment.progress_bar(message="Cropping rasters to tile extent", report_type="message")
-    ps.environment.update_run_log(f"=== TILING: Processing tile {tile_id} of {max_jobs} ===")
-
-    # Get other tile IDs (for masking)
-    ps.environment.update_run_log(f"Getting other tile IDs for masking...")
-    other_tile_ids = [tid for tid in all_tile_ids if tid != tile_id]
-    ps.environment.update_run_log(f"Other tile IDs: {other_tile_ids}")
-
-    # Isolate current tile
-    ps.environment.update_run_log(f"Isolating tile {tile_id}...")
-    tile_mask, tile_extent = isolate_tile(tile_grid_raster, tile_id, other_tile_ids)
-
-    # Create tile-specific directory
-    ps.environment.update_run_log(f"Creating tile directory...")
-    tileDataPath = os.path.join(dataPath, f"tile-{tile_id}")
-    os.makedirs(tileDataPath, exist_ok=True)
-    ps.environment.update_run_log(f"Tile directory: {tileDataPath}")
-
-    # Crop resistance raster
-    ps.environment.update_run_log(f"Cropping resistance raster to tile extent...")
-    cropped_resistance = os.path.join(tileDataPath, "tile_resistance.tif")
-    crop_raster_to_tile(
-        original_resistance_path,
-        cropped_resistance,
-        tile_extent,
-        tile_grid_raster.transform,
-        tile_grid_raster.crs
-    )
-    ps.environment.update_run_log(f"Resistance cropped to: {cropped_resistance}")
-
-    # Crop source raster if provided
-    if original_source_path is not None:
-        ps.environment.update_run_log(f"Cropping source raster to tile extent...")
-        cropped_source = os.path.join(tileDataPath, "tile_source.tif")
-        crop_raster_to_tile(
-            original_source_path,
-            cropped_source,
-            tile_extent,
-            tile_grid_raster.transform,
-            tile_grid_raster.crs
-        )
-        ps.environment.update_run_log(f"Source cropped to: {cropped_source}")
-
-        # Update paths for config generation
-        requiredDataValidation.at[0, 'sourceFile'] = cropped_source
-
-    # Update resistance path for config generation
-    requiredDataValidation.at[0, 'resistanceFile'] = cropped_resistance
-
-    # Close tile grid raster now that we're done with it (prevents file locking)
-    ps.environment.update_run_log(f"Closing tile grid raster...")
-    if tile_grid_raster is not None:
-        tile_grid_raster.close()
-        tile_grid_raster = None
-    ps.environment.update_run_log(f"=== TILING: Tile cropping complete ===")
-else:
-    ps.environment.update_run_log(f"Tiling mode disabled - using full raster extent")
-
-# ============================================================================
-# END TILING SETUP
-# ============================================================================
-
+# NOTE: Tiling and buffering are now handled by prepMultiprocessingTransformer
+# Pre-cropped and pre-buffered tiles are loaded from the manifest
+# This eliminates ~130 lines of complex runtime processing
 
 
 # ============================================================================
-# BUFFERING: APPLY BUFFER TO TILE (OR FULL RASTER IF NOT TILING)
+# MAIN EXECUTION: PROCESS TILES OR FULL EXTENT
 # ============================================================================
 
-# Get buffer configuration
-buffer_pixels = 0
-if not tilingOptions.empty and 'BufferPixels' in tilingOptions.columns:
-    if not pd.isna(tilingOptions.BufferPixels.item()):
-        buffer_pixels = int(tilingOptions.BufferPixels.item())
-
-ps.environment.update_run_log(f"Buffer pixels configured: {buffer_pixels}")
-
-original_bounds = None
-
-if buffer_pixels > 0:
-    ps.environment.progress_bar(message=f"Applying {buffer_pixels}-pixel buffer", report_type="message")
-    ps.environment.update_run_log(f"=== BUFFERING: Applying {buffer_pixels}-pixel buffer ===")
-
-    # Determine which rasters to buffer (tile-cropped or original)
-    resistance_to_buffer = requiredDataValidation.resistanceFile.item()
-    source_to_buffer = requiredDataValidation.sourceFile.item() if requiredData.sourceFile.item() != "None" else None
-    ps.environment.update_run_log(f"Resistance to buffer: {resistance_to_buffer}")
-    ps.environment.update_run_log(f"Source to buffer: {source_to_buffer}")
-
-    # Create buffered directory
-    if is_tiling:
-        bufferedPath = os.path.join(dataPath, f"tile-{tile_id}", "buffered")
-    else:
-        bufferedPath = os.path.join(dataPath, "buffered")
-    os.makedirs(bufferedPath, exist_ok=True)
-    ps.environment.update_run_log(f"Buffer directory: {bufferedPath}")
-
-    # Buffer resistance
-    ps.environment.update_run_log(f"Buffering resistance raster...")
-    buffered_resistance = os.path.join(bufferedPath, "buffered_resistance.tif")
-    original_bounds = buffer_raster(resistance_to_buffer, buffered_resistance, buffer_pixels)
-    ps.environment.update_run_log(f"Buffered resistance: {buffered_resistance}")
-
-    # Buffer source if provided
-    buffered_source = None
-    if source_to_buffer is not None and source_to_buffer != "None":
-        ps.environment.update_run_log(f"Buffering source raster...")
-        buffered_source = os.path.join(bufferedPath, "buffered_source.tif")
-        buffer_raster(source_to_buffer, buffered_source, buffer_pixels)
-        ps.environment.update_run_log(f"Buffered source: {buffered_source}")
-
-        # Update paths for config generation
-        requiredDataValidation.at[0, 'sourceFile'] = buffered_source
-
-    # Update resistance path for config generation
-    requiredDataValidation.at[0, 'resistanceFile'] = buffered_resistance
-
-    ps.environment.update_run_log(f"=== BUFFERING: Buffer application complete ===")
-else:
-    ps.environment.update_run_log(f"Buffering disabled (buffer_pixels = 0)")
-
-# ============================================================================
-# END BUFFERING SETUP
-# ============================================================================
-
-
-
-# Prepare configuration file (.ini) --------------------------------------------
-ps.environment.update_run_log("Generating config.ini...")
-
-file = open(os.path.join(dataPath, "omniscape_Required", "config.ini"), "w")
-
-# Get file paths - use updated paths from tiling/buffering if they exist, otherwise use originals
-resistance_file_path = requiredDataValidation.resistanceFile.item()
-source_file_path = requiredDataValidation.sourceFile.item()
-
-# Handle NaN values (convert to string)
-if pd.isna(resistance_file_path):
-    resistance_file_path = os.path.join(dataPath, "omniscape_Required", requiredData.resistanceFile.item())
-if pd.isna(source_file_path):
-    source_file_path = requiredData.sourceFile.item()
-
-file.write(
-    "[Required]" + "\n"
-    "resistance_file = " + str(resistance_file_path) + "\n"
-    "radius = " + repr(requiredData.radius.item()) + "\n"
-    "project_name = " + os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial") + "\n"
-    "source_file = " + str(source_file_path) + "\n"
-    "\n"
-    "[General Options]" + "\n"
-    "block_size = " + repr(generalOptions.blockSize.item()) + "\n"
-    "source_from_resistance = " + generalOptions.sourceFromResistance.item() + "\n"
-    "resistance_is_conductance = " + generalOptions.resistanceIsConductance.item() + "\n"
-    "r_cutoff = " + repr(generalOptions.rCutoff.item()) + "\n"
-    "buffer = " + repr(generalOptions.buffer.item()) + "\n"
-    "source_threshold = " + repr(generalOptions.sourceThreshold.item()) + "\n"
-    "calc_normalized_current = " + generalOptions.calcNormalizedCurrent.item() + "\n"
-    "calc_flow_potential = " + generalOptions.calcFlowPotential.item() + "\n"
-    "allow_different_projections = " + generalOptions.allowDifferentProjections.item() + "\n"
-    "connect_four_neighbors_only = " + generalOptions.connectFourNeighborsOnly.item() + "\n"
-    "solver = " + generalOptions.solver.item() + "\n"
-    "\n"
-    "[Resistance Reclassification]" + "\n"
-    "reclassify_resistance = " + resistanceOptions.reclassifyResistance.item() + "\n"
-    "reclass_table = " + os.path.join(reclassTablePath, "reclass_table.txt") + "\n"
-    "write_reclassified_resistance = " + resistanceOptions.writeReclassifiedResistance.item() + "\n"
-    "\n"
-    "[Conditional Connectivity]" + "\n"
-    "conditional = " + conditionalOptions.conditional.item() + "\n"
-    "n_conditions = " + repr(conditionalOptions.nConditions.item()) + "\n"
-    "condition1_file = " + condition1.condition1File.item() + "\n"
-    "comparison1 = " + condition1.comparison1.item() + "\n"
-    "condition1_lower = " + condition1.condition1Lower.item() + "\n"
-    "condition1_upper = " + condition1.condition1Upper.item() + "\n"
-    "condition2_file = " + condition2.condition2File.item() + "\n"
-    "comparison2 = " + condition2.comparison2.item() + "\n"
-    "condition2_lower = " + condition2.condition2Lower.item() + "\n"
-    "condition2_upper = " + condition2.condition2Upper.item() + "\n"
-    "compare_to_future = " + futureConditions.compareToFuture.item() + "\n"
-    "condition1_future_file = " + futureConditions.condition1FutureFile.item() + "\n"
-    "condition2_future_file = " + futureConditions.condition2FutureFile.item() + "\n"
-    "\n"
-    "[Output Options]" + "\n"
-    "write_raw_currmap = " + outputOptions.writeRawCurrmap.item() + "\n"
-    "mask_nodata = " + outputOptions.maskNodata.item() + "\n"
-    "write_as_tif = " + outputOptions.writeAsTif.item() + "\n"
-    "\n"
-    "[Multiprocessing]" + "\n"
-    "parallelize = " + multiprocessing.EnableMultiprocessing.item() + "\n"
-    "parallel_batch_size = " + repr(multiprocessing.MaximumJobs.item()) + "\n"
-)
-file.close()
-
-
-
-# Prepare julia script ---------------------------------------------------------
-
-configName = "config.ini"
-
-file = open(os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl"), "w")
-file.write(
-    "cd(raw\"" + os.path.join(dataPath, "omniscape_Required") + "\")" + "\n"
-    "\n"
-    "using Pkg; Pkg.add(name=\"GDAL\"); Pkg.add(name=\"Omniscape\")" + "\n"
-    "using Omniscape" + "\n"
-    "run_omniscape(\"" + configName + "\")"
-)
-file.close()
-ps.environment.update_run_log("Config.ini written successfully")
-
-
-
-# Run julia script with system call -------------------------------------------------------------
-
-ps.environment.progress_bar(message="Running Omniscape", report_type="message")
-ps.environment.update_run_log("Preparing to execute Julia...")
-
+# Prepare Julia executable
 jlExe = juliaConfig.juliaPath.item()
-runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
-ps.environment.update_run_log(f"Julia executable: {jlExe}")
-ps.environment.update_run_log(f"Julia script: {runFile}")
 
 if ' ' in dataPath:
     sys.exit("Due to julia requirements, the path to the SyncroSim Library may not contain any spaces.")
 
-# Add thread specification if multiprocessing is enabled
-# NOTE: For tiling mode, use threads per tile, not total threads
-if multiprocessing.EnableMultiprocessing.item() == "true":
+# Storage for tile outputs (for merging in loop mode)
+tile_output_paths = {}  # Dict: {output_name: [tile1_path, tile2_path, ...]}
+
+# Process each tile (or single full-extent run if not tiling)
+for tile_idx, tile_id in enumerate(tiles_to_process):
+
     if is_tiling:
-        # Calculate threads per tile
-        total_threads = int(multiprocessing.MaximumJobs.item())
-        threads_per_tile = max(1, total_threads // max_jobs)
-        numThreads = threads_per_tile
-        ps.environment.update_run_log(f"Using {numThreads} Julia threads for this tile (total threads: {total_threads}, tiles: {max_jobs})")
+        ps.environment.progress_bar(
+            message=f"Processing tile {tile_idx+1}/{len(tiles_to_process)}",
+            report_type="message"
+        )
+        ps.environment.update_run_log(f"=== Processing Tile {tile_id} ({tile_idx+1}/{len(tiles_to_process)}) ===")
 
-        # Calculate memory per job
-        mem_per_job_gb = calculate_memory_per_job(max_jobs)
+        # Get tile info from manifest
+        tile_info = next(t for t in manifest['tiles'] if t['tile_id'] == tile_id)
+
+        # Load pre-processed tile paths
+        resistance_file_path = tile_info['resistance_path']
+        source_file_path = tile_info['source_path'] if tile_info['source_path'] else "None"
+
+        # Set project name to tile-specific output directory
+        project_name = os.path.join(dataPath, f"omniscape_tile_{tile_id}_output")
+
+        ps.environment.update_run_log(f"Tile resistance: {resistance_file_path}")
+        ps.environment.update_run_log(f"Tile source: {source_file_path}")
+
     else:
+        # Full extent mode (no tiling)
+        ps.environment.progress_bar(message="Running Omniscape", report_type="message")
+        ps.environment.update_run_log("=== Processing Full Extent ===")
+
+        resistance_file_path = requiredDataValidation.resistanceFile.item()
+        source_file_path = requiredDataValidation.sourceFile.item() if not pd.isna(requiredDataValidation.sourceFile.item()) else "None"
+        project_name = os.path.join(dataPath, "omniscape_outputSpatial")
+
+    # ========================================================================
+    # GENERATE CONFIG.INI FOR THIS TILE
+    # ========================================================================
+
+    ps.environment.update_run_log("Generating config.ini...")
+
+    config_file = open(os.path.join(dataPath, "omniscape_Required", "config.ini"), "w")
+
+    config_file.write(
+        "[Required]" + "\n"
+        "resistance_file = " + str(resistance_file_path) + "\n"
+        "radius = " + repr(requiredData.radius.item()) + "\n"
+        "project_name = " + project_name + "\n"
+        "source_file = " + str(source_file_path) + "\n"
+        "\n"
+        "[General Options]" + "\n"
+        "block_size = " + repr(generalOptions.blockSize.item()) + "\n"
+        "source_from_resistance = " + generalOptions.sourceFromResistance.item() + "\n"
+        "resistance_is_conductance = " + generalOptions.resistanceIsConductance.item() + "\n"
+        "r_cutoff = " + repr(generalOptions.rCutoff.item()) + "\n"
+        "buffer = " + repr(generalOptions.buffer.item()) + "\n"
+        "source_threshold = " + repr(generalOptions.sourceThreshold.item()) + "\n"
+        "calc_normalized_current = " + generalOptions.calcNormalizedCurrent.item() + "\n"
+        "calc_flow_potential = " + generalOptions.calcFlowPotential.item() + "\n"
+        "allow_different_projections = " + generalOptions.allowDifferentProjections.item() + "\n"
+        "connect_four_neighbors_only = " + generalOptions.connectFourNeighborsOnly.item() + "\n"
+        "solver = " + generalOptions.solver.item() + "\n"
+        "\n"
+        "[Resistance Reclassification]" + "\n"
+        "reclassify_resistance = " + resistanceOptions.reclassifyResistance.item() + "\n"
+        "reclass_table = " + os.path.join(reclassTablePath, "reclass_table.txt") + "\n"
+        "write_reclassified_resistance = " + resistanceOptions.writeReclassifiedResistance.item() + "\n"
+        "\n"
+        "[Conditional Connectivity]" + "\n"
+        "conditional = " + conditionalOptions.conditional.item() + "\n"
+        "n_conditions = " + repr(conditionalOptions.nConditions.item()) + "\n"
+        "condition1_file = " + condition1.condition1File.item() + "\n"
+        "comparison1 = " + condition1.comparison1.item() + "\n"
+        "condition1_lower = " + condition1.condition1Lower.item() + "\n"
+        "condition1_upper = " + condition1.condition1Upper.item() + "\n"
+        "condition2_file = " + condition2.condition2File.item() + "\n"
+        "comparison2 = " + condition2.comparison2.item() + "\n"
+        "condition2_lower = " + condition2.condition2Lower.item() + "\n"
+        "condition2_upper = " + condition2.condition2Upper.item() + "\n"
+        "compare_to_future = " + futureConditions.compareToFuture.item() + "\n"
+        "condition1_future_file = " + futureConditions.condition1FutureFile.item() + "\n"
+        "condition2_future_file = " + futureConditions.condition2FutureFile.item() + "\n"
+        "\n"
+        "[Output Options]" + "\n"
+        "write_raw_currmap = " + outputOptions.writeRawCurrmap.item() + "\n"
+        "mask_nodata = " + outputOptions.maskNodata.item() + "\n"
+        "write_as_tif = " + outputOptions.writeAsTif.item() + "\n"
+        "\n"
+    )
+
+    # Disable Julia multiprocessing when tiling (parallelism from spatial tiling)
+    if is_tiling:
+        config_file.write(
+            "[Multiprocessing]" + "\n"
+            "parallelize = false" + "\n"
+            "parallel_batch_size = 1" + "\n"
+        )
+    else:
+        config_file.write(
+            "[Multiprocessing]" + "\n"
+            "parallelize = " + multiprocessing.EnableMultiprocessing.item() + "\n"
+            "parallel_batch_size = " + repr(multiprocessing.MaximumJobs.item()) + "\n"
+        )
+
+    config_file.write("\n")
+    config_file.close()
+
+    # ========================================================================
+    # GENERATE JULIA SCRIPT
+    # ========================================================================
+
+    julia_file = open(os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl"), "w")
+    julia_file.write(
+        "cd(raw\"" + os.path.join(dataPath, "omniscape_Required") + "\")" + "\n"
+        "\n"
+        "using Pkg; Pkg.add(name=\"GDAL\"); Pkg.add(name=\"Omniscape\")" + "\n"
+        "using Omniscape" + "\n"
+        "run_omniscape(\"config.ini\")"
+    )
+    julia_file.close()
+
+    # ========================================================================
+    # RUN JULIA
+    # ========================================================================
+
+    runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
+
+    # Disable Julia multithreading when tiling
+    if is_tiling:
+        runOmniscape = f"{jlExe} {runFile}"
+    elif multiprocessing.EnableMultiprocessing.item() == "true":
         numThreads = int(multiprocessing.MaximumJobs.item())
+        runOmniscape = f"{jlExe} -t {numThreads} {runFile}"
+    else:
+        runOmniscape = f"{jlExe} {runFile}"
 
-    runOmniscape = f"{jlExe} -t {numThreads} {runFile}"
-else:
-    runOmniscape = f"{jlExe} {runFile}"
+    ps.environment.update_run_log(f"Executing: {runOmniscape}")
+    ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
 
-ps.environment.update_run_log(f"Executing command: {runOmniscape}")
-ps.environment.update_run_log(">>> Starting Omniscape.jl execution (this may take several minutes) <<<")
+    start_time = time.time()
+    exit_code = os.system(runOmniscape)
+    elapsed_time = time.time() - start_time
 
-exit_code = os.system(runOmniscape)
+    ps.environment.update_run_log(f">>> Completed with exit code: {exit_code} (took {elapsed_time:.1f}s) <<<")
 
-ps.environment.update_run_log(f">>> Omniscape.jl execution completed with exit code: {exit_code} <<<")
+    if exit_code != 0:
+        sys.exit(f"Omniscape.jl failed with exit code {exit_code}")
 
-if exit_code != 0:
-    sys.exit(f"Omniscape.jl failed with exit code {exit_code}. Check Julia output above for errors.")
+    # ========================================================================
+    # POST-PROCESS TILE OUTPUTS
+    # ========================================================================
+
+    if is_tiling:
+        tile_output_dir = os.path.join(dataPath, f"omniscape_tile_{tile_id}_output")
+
+        # Remove buffer if tiles were buffered
+        if tile_info['is_buffered']:
+            ps.environment.update_run_log(f"Removing {manifest['buffer_pixels']}-pixel buffer from tile outputs...")
+
+            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif']
+
+            for output_file in output_files:
+                buffered_path = os.path.join(tile_output_dir, output_file)
+
+                if os.path.exists(buffered_path):
+                    cropped_path = buffered_path.replace('.tif', '_cropped.tif')
+
+                    crop_buffer_from_output(
+                        buffered_path,
+                        cropped_path,
+                        tile_info['original_extent'],
+                        manifest['buffer_pixels']
+                    )
+
+                    os.remove(buffered_path)
+                    os.rename(cropped_path, buffered_path)
+                    ps.environment.update_run_log(f"  Removed buffer from {output_file}")
+
+        # Handle mode-specific post-processing
+        if mode == "multiprocessing":
+            # Extend tiles to full extent for SyncroSim merging
+            ps.environment.update_run_log("Extending tile outputs to full extent for SyncroSim merging...")
+
+            full_extent_info = manifest['full_extent']
+            full_transform = Affine(*full_extent_info['transform'])
+
+            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif', 'classified_resistance.tif']
+
+            for output_file in output_files:
+                tile_path = os.path.join(tile_output_dir, output_file)
+
+                if os.path.exists(tile_path):
+                    extended_path = tile_path.replace('.tif', '_extended.tif')
+
+                    extend_tile_to_full_extent(
+                        tile_path,
+                        extended_path,
+                        (full_extent_info['width'], full_extent_info['height']),
+                        full_transform,
+                        full_extent_info['crs']
+                    )
+
+                    os.remove(tile_path)
+                    os.rename(extended_path, tile_path)
+                    ps.environment.update_run_log(f"  Extended {output_file} to full extent")
+
+        else:  # Loop mode
+            # Collect tile outputs for later merging
+            ps.environment.update_run_log(f"Collecting tile {tile_id} outputs for merging...")
+
+            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif', 'classified_resistance.tif']
+
+            for output_file in output_files:
+                tile_path = os.path.join(tile_output_dir, output_file)
+
+                if os.path.exists(tile_path):
+                    if output_file not in tile_output_paths:
+                        tile_output_paths[output_file] = []
+                    tile_output_paths[output_file].append(tile_path)
+
+# ============================================================================
+# MERGE TILES IN LOOP MODE
+# ============================================================================
+
+if is_tiling and mode == "loop":
+    ps.environment.progress_bar(message="Merging tile outputs", report_type="message")
+    ps.environment.update_run_log("=== Merging Tile Outputs ===")
+
+    # Create final output directory
+    final_output_dir = os.path.join(dataPath, "omniscape_outputSpatial")
+    os.makedirs(final_output_dir, exist_ok=True)
+
+    # Merge each output type
+    full_extent_info = manifest['full_extent']
+
+    for output_name, tile_paths in tile_output_paths.items():
+        final_path = os.path.join(final_output_dir, output_name)
+
+        ps.environment.update_run_log(f"Merging {len(tile_paths)} tiles for {output_name}...")
+
+        merge_tile_outputs(tile_paths, final_path, full_extent_info)
+
+        ps.environment.update_run_log(f"  Created merged output: {output_name}")
+
+    ps.environment.update_run_log("=== Tile Merging Complete ===")
+
+# ============================================================================
+# HANDLE NON-TILING MODE OUTPUT LOCATION
+# ============================================================================
+
+# In multiprocessing mode, outputs are already in correct location (extended to full extent)
+# In non-tiling mode, outputs are already in omniscape_outputSpatial
+# In loop mode, outputs have been merged to omniscape_outputSpatial
+# So no additional copying needed!
 
 
 
 # ============================================================================
-# POST-PROCESSING: REMOVE BUFFER FROM OUTPUTS
+# CREATE OUTPUT DATASHEETS
 # ============================================================================
 
-if buffer_pixels > 0:
-    ps.environment.progress_bar(message="Removing buffer from outputs", report_type="message")
-    ps.environment.update_run_log(f"=== POST-PROCESSING: Removing {buffer_pixels}-pixel buffer from outputs ===")
-
-    # List of possible output files
-    output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif']
-
-    for output_file in output_files:
-        buffered_output = os.path.join(dataPath, "omniscape_outputSpatial", output_file)
-        ps.environment.update_run_log(f"Checking for output: {output_file}")
-
-        if os.path.exists(buffered_output):
-            ps.environment.update_run_log(f"  Found {output_file}, removing buffer...")
-            # Crop back to original (pre-buffer) extent
-            temp_cropped = buffered_output.replace('.tif', '_cropped.tif')
-            crop_to_original(buffered_output, temp_cropped, original_bounds, buffer_pixels)
-
-            # Replace buffered with cropped
-            ps.environment.update_run_log(f"  Replacing buffered output with cropped version...")
-            os.remove(buffered_output)
-            os.rename(temp_cropped, buffered_output)
-
-            ps.environment.update_run_log(f"  Removed buffer from {output_file}")
-        else:
-            ps.environment.update_run_log(f"  {output_file} not found (may not have been generated)")
-
-    ps.environment.update_run_log(f"=== POST-PROCESSING: Buffer removal complete ===")
-
-# ============================================================================
-# END BUFFER REMOVAL
-# ============================================================================
-
-
-
-# ============================================================================
-# POST-PROCESSING: EXTEND TILE OUTPUTS TO FULL EXTENT
-# ============================================================================
-
-if is_tiling:
-    ps.environment.progress_bar(message="Extending tile outputs to full extent", report_type="message")
-    ps.environment.update_run_log(f"=== POST-PROCESSING: Extending tile outputs to full extent ===")
-
-    # List of possible output files
-    output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif', 'classified_resistance.tif']
-
-    for output_file in output_files:
-        tile_output = os.path.join(dataPath, "omniscape_outputSpatial", output_file)
-        ps.environment.update_run_log(f"Checking for output: {output_file}")
-
-        if os.path.exists(tile_output):
-            ps.environment.update_run_log(f"  Found {output_file}, extending to full extent...")
-            # Extend to full extent (critical for SyncroSim merging)
-            temp_extended = tile_output.replace('.tif', '_extended.tif')
-            extend_tile_to_full_extent(
-                tile_output,
-                temp_extended,
-                (full_extent_info['width'], full_extent_info['height']),
-                full_extent_info['transform'],
-                full_extent_info['crs']
-            )
-
-            # Replace tile with extended
-            ps.environment.update_run_log(f"  Replacing tile output with extended version...")
-            os.remove(tile_output)
-            os.rename(temp_extended, tile_output)
-
-            ps.environment.update_run_log(f"  Extended {output_file} to full extent")
-        else:
-            ps.environment.update_run_log(f"  {output_file} not found (may not have been generated)")
-
-    ps.environment.update_run_log(f"=== POST-PROCESSING: Extent extension complete ===")
-
-# ============================================================================
-# END POST-PROCESSING
-# ============================================================================
-
-
-
-# Create output datasheets ----------------------------------------------------------------------
+ps.environment.update_run_log("Creating output datasheets...")
 
 myOutput = myScenario.datasheets(name = "omniscape_outputSpatial")
 
+# Determine output directory based on execution mode
+if is_tiling and mode == "multiprocessing":
+    # Multiprocessing mode: outputs in tile-specific directory (extended to full extent)
+    output_dir = os.path.join(dataPath, f"omniscape_tile_{tiles_to_process[0]}_output")
+else:
+    # Non-tiling or loop mode: outputs in standard directory
+    output_dir = os.path.join(dataPath, "omniscape_outputSpatial")
+
+ps.environment.update_run_log(f"Output directory: {output_dir}")
+
+# Add outputs to datasheet
 if outputOptions.writeRawCurrmap.item() == "true":
-    myOutput.cumCurrmap = pd.Series(os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial", "cum_currmap.tif"))
+    cum_currmap_path = os.path.join(output_dir, "cum_currmap.tif")
+    if os.path.exists(cum_currmap_path):
+        myOutput.cumCurrmap = pd.Series(cum_currmap_path)
+        ps.environment.update_run_log(f"  Added cumCurrmap output")
+    else:
+        ps.environment.update_run_log(f"  Warning: cum_currmap.tif not found")
 
 if generalOptions.calcFlowPotential.item() == "true":
-    myOutput.flowPotential = pd.Series(os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial", "flow_potential.tif"))
+    flow_potential_path = os.path.join(output_dir, "flow_potential.tif")
+    if os.path.exists(flow_potential_path):
+        myOutput.flowPotential = pd.Series(flow_potential_path)
+        ps.environment.update_run_log(f"  Added flowPotential output")
+    else:
+        ps.environment.update_run_log(f"  Warning: flow_potential.tif not found")
 
 if generalOptions.calcNormalizedCurrent.item() == "true":
-    myOutput.normalizedCumCurrmap = pd.Series(os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial", "normalized_cum_currmap.tif"))
+    normalized_path = os.path.join(output_dir, "normalized_cum_currmap.tif")
+    if os.path.exists(normalized_path):
+        myOutput.normalizedCumCurrmap = pd.Series(normalized_path)
+        ps.environment.update_run_log(f"  Added normalizedCumCurrmap output")
+    else:
+        ps.environment.update_run_log(f"  Warning: normalized_cum_currmap.tif not found")
 
-if (os.path.isfile(os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial", "classified_resistance.tif"))) & (resistanceOptions.writeReclassifiedResistance.item() == "true"):
-    myOutput.classifiedResistance = pd.Series(os.path.join(wrkDir, "Scenario-" + repr(myScenarioID), "omniscape_outputSpatial", "classified_resistance.tif"))
+# Check for classified resistance
+classified_path = os.path.join(output_dir, "classified_resistance.tif")
+if os.path.exists(classified_path) and resistanceOptions.writeReclassifiedResistance.item() == "true":
+    myOutput.classifiedResistance = pd.Series(classified_path)
+    ps.environment.update_run_log(f"  Added classifiedResistance output (reclassified)")
 else:
     myOutput.classifiedResistance = pd.Series(original_resistance_path)
+    ps.environment.update_run_log(f"  Added classifiedResistance output (original)")
 
 
 
 # Save outputs to SyncroSim ---------------------------------------------------------------------
 
+ps.environment.update_run_log("Saving outputs to SyncroSim datasheet...")
 myParentScenario.save_datasheet(name = "omniscape_outputSpatial", data = myOutput)
+ps.environment.update_run_log("=== Omniscape Transformer Completed Successfully ===")
+ps.environment.progress_bar(message="Scenario complete", report_type="message")
 
 
