@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.3.0" minSyncroSimVersion="3.1.0">
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.4.0" minSyncroSimVersion="3.1.0">
             
       <dataSheet name="juliaConfiguration" displayName="Julia Configuration" dataScope="Library" isSingleRow="True">
           <column name="juliaPath" displayName="Julia executable" dataType="String" isExternalFile="True" allowDbNull="False" externalFileAbsolute="True" />
@@ -45,6 +45,11 @@
           <column name="writeRawCurrmap" displayName="Write raw cumulative current map" dataType="Boolean" isOptional="True" defaultValue="-1" />
           <column name="maskNodata" displayName="Mask nodata" dataType="Boolean" isOptional="True" defaultValue="-1" />
           <column name="writeAsTif" displayName="Write as tif" dataType="Boolean" isOptional="True" defaultValue="0" />
+      </dataSheet>
+
+      <dataSheet name="TilingOptions" displayName="Tiling Options" isSingleRow="True">
+          <column name="TileCount" displayName="Tile Count" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="1" isOptional="True" description="Number of spatial tiles for multiprocessing. Leave empty for auto-calculation. Set to 1 to disable tiling." />
+          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile to reduce edge effects. Recommended: 50-200 pixels." />
       </dataSheet>
 
       <dataSheet name="ConditionalOptions" displayName="Options" isSingleRow="True">
@@ -95,18 +100,35 @@
           <column name="percentCover" displayName="Percent cover" dataType="Double" validationType="Decimal" validationCondition="None" />
       </dataSheet>
 
-    <transformer 
-      name="omniscapeTransformer" 
-      displayName="1 - Omniscape" 
-      transformerSpecificOutput="False" 
-      isRunnable="True" 
-      programName="python" 
-      programArguments="omniscapeTransformer.py" 
+    <transformer
+      name="prepMultiprocessingTransformer"
+      displayName="0 - Prepare Spatial Tiling"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="prepMultiprocessingTransformer.py"
+      condaEnv="omniscapeEnvironmentv2.yml"
+      condaEnvVersion="3"
+      isMultiprocessing="False">
+        <dataSheet name="Required" type="Input" />
+        <dataSheet name="TilingOptions" type="Input" />
+        <dataSheet name="core_SpatialMultiprocessing" type="Output" />
+    </transformer>
+
+    <transformer
+      name="omniscapeTransformer"
+      displayName="1 - Omniscape"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="omniscapeTransformer.py"
       condaEnv="omniscapeEnvironmentv2.yml"
       condaEnvVersion="3">
         <dataSheet name="ResistanceOptions" type="Input" />
         <dataSheet name="Required" type="Input" />
-        <dataSheet name="outputSpatial" type="Output" />
+        <dataSheet name="TilingOptions" type="Input" />
+        <dataSheet name="outputSpatial" type="Output" spatialMultiProcessing="True" />
+        <dataSheet name="core_SpatialMultiprocessing" type="Input"/>
         <dataSheet name="OutputOptions" type="Input" />
         <dataSheet name="GeneralOptions" type="Input" />
         <dataSheet name="FutureConditions" type="Input" />
@@ -143,6 +165,7 @@
       <item name="Required" />
       <group name="Optional" displayName="Optional">
         <item name="GeneralOptions" />
+        <item name="TilingOptions" />
         <group name="Resistance0Reclassification" displayName="Resistance Reclassification">
           <item name="ResistanceOptions" />
           <item name="ReclassTable" />
