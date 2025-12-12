@@ -4,6 +4,7 @@ Handles tiling, buffering, and raster processing operations.
 """
 
 import os
+import re
 import json
 import numpy as np
 import rasterio
@@ -19,16 +20,48 @@ def load_tile_manifest(scenario_id, wrkDir):
     """
     Load tile manifest created by prep transformer.
 
+    Handles both regular and multiprocessing (Job-X.ssim) scenarios.
+    In multiprocessing mode, looks for manifest in parent library's data directory.
+
     Returns:
         dict: Manifest data, or None if no manifest exists
     """
-    manifest_path = os.path.join(
-        wrkDir, f"Scenario-{scenario_id}", "OmniscapeTiles", "tile_manifest.json"
-    )
+    # Check if we're in a Job-X.ssim library (multiprocessing mode)
+    if "MultiProc" in wrkDir and "Job-" in wrkDir:
+        # Extract parent scenario ID and library name from path
+        # Example path: D:\SyncroSim\omniscape-tiling.ssim.temp\MultiProc\Scenario-20\t10\Job-4.ssim.data
+
+        # Find parent scenario ID in path
+        scenario_match = re.search(r'Scenario-(\d+)', wrkDir)
+        if scenario_match:
+            parent_scenario_id = scenario_match.group(1)
+
+            # Reconstruct parent library data directory
+            # Replace .ssim.temp/MultiProc/... with .ssim.data
+            lib_base = wrkDir.split('.ssim.temp')[0]
+            parent_wrkDir = f"{lib_base}.ssim.data"
+
+            manifest_path = os.path.join(
+                parent_wrkDir, f"Scenario-{parent_scenario_id}", "OmniscapeTiles", "tile_manifest.json"
+            )
+
+            ps.environment.update_run_log(f"Multiprocessing mode: Looking for manifest in parent library at {manifest_path}")
+        else:
+            # Fallback to local path
+            manifest_path = os.path.join(
+                wrkDir, f"Scenario-{scenario_id}", "OmniscapeTiles", "tile_manifest.json"
+            )
+    else:
+        # Regular mode: look in current working directory
+        manifest_path = os.path.join(
+            wrkDir, f"Scenario-{scenario_id}", "OmniscapeTiles", "tile_manifest.json"
+        )
 
     if not os.path.exists(manifest_path):
+        ps.environment.update_run_log(f"Manifest not found at: {manifest_path}")
         return None
 
+    ps.environment.update_run_log(f"Loading manifest from: {manifest_path}")
     with open(manifest_path, 'r') as f:
         return json.load(f)
 

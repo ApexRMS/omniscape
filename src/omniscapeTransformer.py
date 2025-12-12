@@ -69,6 +69,10 @@ juliaConfig = myScenario.datasheets(name = "omniscape_juliaConfiguration")
 # ============================================================================
 
 # Load tile manifest created by prep transformer
+ps.environment.update_run_log(f"[DEBUG] Working directory: {wrkDir}")
+ps.environment.update_run_log(f"[DEBUG] Library name: {myLibrary.name}")
+ps.environment.update_run_log(f"[DEBUG] Scenario ID: {myScenarioID}")
+
 manifest = load_tile_manifest(myScenarioID, wrkDir)
 
 if manifest is None:
@@ -80,12 +84,16 @@ if manifest is None:
 else:
     # Tiling enabled - determine execution mode
     ps.environment.update_run_log(f"Tile manifest loaded: {manifest['tile_count']} tiles, buffer={manifest['buffer_pixels']} pixels")
+    ps.environment.update_run_log(f"[DEBUG] Grid raster: {manifest['grid_raster']}")
+    ps.environment.update_run_log(f"[DEBUG] Full extent: {manifest['full_extent']['width']} x {manifest['full_extent']['height']}")
+
     is_tiling = True
     mode, assigned_tile_id, all_tile_ids = determine_execution_mode(myLibrary, manifest)
 
     if mode == "multiprocessing":
         # Process only the assigned tile
         tiles_to_process = [assigned_tile_id]
+        ps.environment.update_run_log(f"MULTIPROCESSING MODE: This job will process tile {assigned_tile_id} of {manifest['tile_count']}")
         ps.environment.progress_bar(
             message=f"Processing tile {assigned_tile_id}/{manifest['tile_count']}",
             report_type="message"
@@ -93,6 +101,7 @@ else:
     else:
         # Loop mode: process all tiles sequentially
         tiles_to_process = all_tile_ids
+        ps.environment.update_run_log(f"LOOP MODE: Will process {len(all_tile_ids)} tiles sequentially")
         ps.environment.progress_bar(
             message=f"Processing {len(all_tile_ids)} tiles sequentially",
             report_type="message"
@@ -325,8 +334,18 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         # Set project name to tile-specific output directory
         project_name = os.path.join(dataPath, f"omniscape_tile_{tile_id}_output")
 
-        ps.environment.update_run_log(f"Tile resistance: {resistance_file_path}")
-        ps.environment.update_run_log(f"Tile source: {source_file_path}")
+        ps.environment.update_run_log(f"[TILE {tile_id}] Resistance: {resistance_file_path}")
+        ps.environment.update_run_log(f"[TILE {tile_id}] Source: {source_file_path}")
+        ps.environment.update_run_log(f"[TILE {tile_id}] Output dir: {project_name}")
+        ps.environment.update_run_log(f"[TILE {tile_id}] Buffered: {tile_info['is_buffered']}")
+
+        # Verify tile files exist
+        if not os.path.exists(resistance_file_path):
+            sys.exit(f"ERROR: Tile resistance file not found: {resistance_file_path}")
+
+        # Get tile file size to confirm it's not the full raster
+        tile_size_mb = os.path.getsize(resistance_file_path) / (1024 * 1024)
+        ps.environment.update_run_log(f"[TILE {tile_id}] Resistance file size: {tile_size_mb:.2f} MB")
 
     else:
         # Full extent mode (no tiling)
