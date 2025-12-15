@@ -57,6 +57,60 @@ def crop_raster_to_extent(input_path, output_path, extent, transform, crs):
             dst.write(data, 1)
 
 
+def calculate_optimal_grid(width, height, desired_tile_count):
+    """
+    Calculate optimal grid dimensions that match raster aspect ratio.
+
+    Args:
+        width: Raster width in pixels
+        height: Raster height in pixels
+        desired_tile_count: User-specified or auto-calculated tile count
+
+    Returns:
+        tuple: (rows, cols, actual_tile_count, description)
+    """
+    aspect_ratio = width / height
+
+    # Find best grid by testing combinations near desired count
+    best_grid = None
+    best_score = float('inf')
+
+    # Test grid dimensions from 1x1 up to reasonable limits
+    max_dim = min(int(math.sqrt(desired_tile_count * 4)), 20)  # Don't go crazy
+
+    for rows in range(1, max_dim + 1):
+        for cols in range(1, max_dim + 1):
+            actual_count = rows * cols
+
+            # Skip grids that are too far from desired count
+            if abs(actual_count - desired_tile_count) > max(3, desired_tile_count * 0.3):
+                continue
+
+            grid_aspect = cols / rows
+
+            # Score based on:
+            # 1. How close to desired tile count (weight: 1.0)
+            # 2. How well grid aspect matches raster aspect (weight: 3.0)
+            # Higher aspect weight ensures we don't create long thin strips on square rasters
+            count_penalty = abs(actual_count - desired_tile_count)
+            aspect_penalty = abs(grid_aspect - aspect_ratio) * 3.0
+            score = count_penalty + aspect_penalty
+
+            if score < best_score:
+                best_score = score
+                best_grid = (rows, cols, actual_count)
+
+    if best_grid is None:
+        # Fallback to square grid
+        dim = int(math.ceil(math.sqrt(desired_tile_count)))
+        best_grid = (dim, dim, dim * dim)
+
+    rows, cols, actual_count = best_grid
+    description = f"{rows}×{cols} grid"
+
+    return rows, cols, actual_count, description
+
+
 def buffer_raster(input_path, output_path, buffer_pixels):
     """
     Create buffered version of raster by extending edges.
@@ -189,25 +243,29 @@ if manual_tile_count is None:
     # Calculate required tiles
     num_tiles_needed = max(2, math.ceil(valid_pixels / TARGET_TILE_SIZE))
 
-    # Round to nearest perfect square for square grids
-    # Prefer: 4, 9, 16, 25, 36, 49, 64, 81, 100
-    sqrt_tiles = math.sqrt(num_tiles_needed)
-    rounded_sqrt = max(2, round(sqrt_tiles))
-    tile_count = rounded_sqrt ** 2
-
     # Cap at 100 tiles maximum
-    tile_count = min(tile_count, 100)
+    desired_tile_count = min(num_tiles_needed, 100)
 
-    ps.environment.update_run_log(f"Auto-calculated tile count: {tile_count} ({rounded_sqrt}x{rounded_sqrt} grid)")
+    ps.environment.update_run_log(f"Calculated desired tile count: {desired_tile_count}")
 else:
-    tile_count = manual_tile_count
-    ps.environment.update_run_log(f"Using manual tile count: {tile_count}")
+    desired_tile_count = manual_tile_count
+    ps.environment.update_run_log(f"User-specified tile count: {desired_tile_count}")
+
+# Calculate optimal grid based on raster aspect ratio
+tile_dim_rows, tile_dim_cols, tile_count, grid_desc = calculate_optimal_grid(
+    width, height, desired_tile_count
+)
+
+# Log adjustment if needed
+if tile_count != desired_tile_count:
+    ps.environment.update_run_log(
+        f"Adjusted tile count from {desired_tile_count} to {tile_count} ({grid_desc}) "
+        f"for even tile distribution"
+    )
+else:
+    ps.environment.update_run_log(f"Using {tile_count} tiles ({grid_desc})")
 
 ps.environment.progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
-
-# Create tile grid raster
-tile_dim_rows = int(math.ceil(math.sqrt(tile_count)))
-tile_dim_cols = int(math.ceil(tile_count / tile_dim_rows))
 
 # Calculate tile dimensions in pixels
 tile_height = int(math.ceil(height / tile_dim_rows))
@@ -216,13 +274,10 @@ tile_width = int(math.ceil(width / tile_dim_cols))
 # Create grid array initialized to -9999 (NoData)
 grid = np.full((height, width), -9999, dtype=np.int32)
 
-# Assign tile IDs
+# Assign tile IDs (all tiles will be filled since grid matches tile_count exactly)
 tile_id = 1
 for row in range(tile_dim_rows):
     for col in range(tile_dim_cols):
-        if tile_id > tile_count:
-            break
-
         row_start = row * tile_height
         row_end = min((row + 1) * tile_height, height)
         col_start = col * tile_width
@@ -308,9 +363,6 @@ manifest = {
 tile_id = 1
 for row in range(tile_dim_rows):
     for col in range(tile_dim_cols):
-        if tile_id > tile_count:
-            break
-
         ps.environment.progress_bar(
             message=f"Processing tile {tile_id}/{tile_count}",
             report_type="message"
@@ -322,28 +374,10 @@ for row in range(tile_dim_rows):
         col_start = col * tile_width
         col_end = min((col + 1) * tile_width, width)
 
-        # Extend last tile in each row to cover full width (prevents gaps)
-        # Only extend if this is truly the last column OR if it's the last tile overall
-        if col == tile_dim_cols - 1:
-            # This tile is in the last column - extend to full width
-            col_end = width
-
-        # Extend last tile in each column to cover full height
-        if row == tile_dim_rows - 1:
-            # This tile is in the last row - extend to full height
-            row_end = height
-
-        # Special case: if this is the last tile and it's not in the last column,
-        # extend it to cover the remaining width to prevent gaps
-        if tile_id == tile_count and col < tile_dim_cols - 1:
-            col_end = width
-            ps.environment.update_run_log(
-                f"  Extending tile {tile_id} to full width to prevent gap "
-                f"(last tile in incomplete grid)"
-            )
-
+        tile_pixels = (row_end - row_start) * (col_end - col_start)
         ps.environment.update_run_log(
-            f"Tile {tile_id}: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}]"
+            f"Tile {tile_id}: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}] "
+            f"({tile_pixels:,} pixels)"
         )
 
         # Crop resistance
