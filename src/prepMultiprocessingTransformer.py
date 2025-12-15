@@ -322,6 +322,26 @@ for row in range(tile_dim_rows):
         col_start = col * tile_width
         col_end = min((col + 1) * tile_width, width)
 
+        # Extend last tile in each row to cover full width (prevents gaps)
+        # Only extend if this is truly the last column OR if it's the last tile overall
+        if col == tile_dim_cols - 1:
+            # This tile is in the last column - extend to full width
+            col_end = width
+
+        # Extend last tile in each column to cover full height
+        if row == tile_dim_rows - 1:
+            # This tile is in the last row - extend to full height
+            row_end = height
+
+        # Special case: if this is the last tile and it's not in the last column,
+        # extend it to cover the remaining width to prevent gaps
+        if tile_id == tile_count and col < tile_dim_cols - 1:
+            col_end = width
+            ps.environment.update_run_log(
+                f"  Extending tile {tile_id} to full width to prevent gap "
+                f"(last tile in incomplete grid)"
+            )
+
         ps.environment.update_run_log(
             f"Tile {tile_id}: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}]"
         )

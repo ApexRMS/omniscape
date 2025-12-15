@@ -114,12 +114,23 @@ def crop_buffer_from_output(buffered_path, output_path, original_extent, buffer_
         buffer_pixels: Buffer size used
     """
     with rasterio.open(buffered_path) as src:
+        # Log buffered raster info
+        ps.environment.update_run_log(
+            f"[crop_buffer] Buffered raster: {src.height}x{src.width}, "
+            f"removing {buffer_pixels}px buffer"
+        )
+
         # Create window to extract original extent
         window = Window(
             buffer_pixels,
             buffer_pixels,
             original_extent["col_end"] - original_extent["col_start"],
             original_extent["row_end"] - original_extent["row_start"]
+        )
+
+        ps.environment.update_run_log(
+            f"[crop_buffer] Crop window: col_off={buffer_pixels}, row_off={buffer_pixels}, "
+            f"width={window.width}, height={window.height}"
         )
 
         data = src.read(1, window=window)
@@ -207,8 +218,32 @@ def extend_tile_to_full_extent(tile_raster_path, output_path, full_extent, full_
     row_end = min(row_offset + tile_height, full_height)
     col_end = min(col_offset + tile_width, full_width)
 
+    # Diagnostic logging
+    ps.environment.update_run_log(
+        f"[extend_tile_to_full_extent] Tile size: {tile_height}x{tile_width}, "
+        f"Full extent: {full_height}x{full_width}, "
+        f"Placement: [{row_offset}:{row_end}, {col_offset}:{col_end}]"
+    )
+
+    # Check for out-of-bounds placement
+    if row_offset < 0 or col_offset < 0 or row_offset >= full_height or col_offset >= full_width:
+        ps.environment.update_run_log(
+            f"[extend_tile_to_full_extent] WARNING: Tile offset is out of bounds! "
+            f"offset=({row_offset}, {col_offset}), full_extent=({full_height}, {full_width})"
+        )
+
     full_array[row_offset:row_end, col_offset:col_end] = \
         tile_data[0:(row_end - row_offset), 0:(col_end - col_offset)]
+
+    # Log statistics about the placed data
+    placed_data = tile_data[0:(row_end - row_offset), 0:(col_end - col_offset)]
+    if nodata is not None:
+        valid_count = np.sum(placed_data != nodata)
+    else:
+        valid_count = np.sum(~np.isnan(placed_data))
+    ps.environment.update_run_log(
+        f"[extend_tile_to_full_extent] Placed {valid_count} valid pixels out of {placed_data.size} total"
+    )
 
     ps.environment.update_run_log(f"[extend_tile_to_full_extent] Writing extended raster...")
     # Write extended raster
