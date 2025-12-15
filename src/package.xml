@@ -107,7 +107,7 @@
       isRunnable="True"
       programName="python"
       programArguments="prepMultiprocessingTransformer.py"
-      condaEnv="omniscapeEnvironmentv2.yml"
+      condaEnv="omniscapeEnvironment.yml"
       condaEnvVersion="3"
       isMultiprocessing="False">
         <dataSheet name="Required" type="Input" />
@@ -122,7 +122,7 @@
       isRunnable="True"
       programName="python"
       programArguments="omniscapeTransformer.py"
-      condaEnv="omniscapeEnvironmentv2.yml"
+      condaEnv="omniscapeEnvironment.yml"
       condaEnvVersion="3">
         <dataSheet name="ResistanceOptions" type="Input" />
         <dataSheet name="Required" type="Input" />
@@ -145,7 +145,7 @@
       isRunnable="True" 
       programName="python" 
       programArguments="movementCategoriesTransformer.py" 
-      condaEnv="omniscapeEnvironmentv2.yml"
+      condaEnv="omniscapeEnvironment.yml"
       condaEnvVersion="3">
         <dataSheet name="reclassificationThresholds" type="Input" />
         <dataSheet name="outputTabularReclassification" type="Output" />
