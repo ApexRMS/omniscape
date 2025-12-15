@@ -164,6 +164,19 @@ def extend_tile_to_full_extent(tile_raster_path, output_path, full_extent, full_
         nodata = src.nodata
         dtype = src.dtypes[0]
 
+    ps.environment.update_run_log(f"[extend_tile_to_full_extent] Original dtype: {dtype}, numpy dtype: {tile_data.dtype}")
+
+    # Convert Byte/UInt8 to Float32 for SyncroSim merger compatibility
+    # Check multiple ways since dtype comparison can be tricky
+    dtype_str = str(dtype).lower()
+    if 'uint8' in dtype_str or 'byte' in dtype_str or tile_data.dtype == np.uint8:
+        ps.environment.update_run_log(f"[extend_tile_to_full_extent] Converting {dtype} to float32 for SyncroSim compatibility")
+        tile_data = tile_data.astype(np.float32)
+        dtype = rasterio.float32
+        if nodata is not None and nodata != -9999:
+            nodata = -9999.0  # Use standard nodata for float32
+            ps.environment.update_run_log(f"[extend_tile_to_full_extent] Changed nodata to -9999.0")
+
     ps.environment.update_run_log(f"[extend_tile_to_full_extent] Creating full-extent array ({full_width}x{full_height})...")
     # Create full-extent array filled with nodata
     if nodata is not None:
