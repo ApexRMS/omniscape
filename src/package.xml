@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.4.0" minSyncroSimVersion="3.1.0">
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.5.0" minSyncroSimVersion="3.1.0">
             
       <dataSheet name="juliaConfiguration" displayName="Julia Configuration" dataScope="Library" isSingleRow="True">
           <column name="juliaPath" displayName="Julia executable" dataType="String" isExternalFile="True" allowDbNull="False" externalFileAbsolute="True" />
@@ -108,7 +108,7 @@
       programName="python"
       programArguments="prepMultiprocessingTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3"
+      condaEnvVersion="3.0"
       isMultiprocessing="False">
         <dataSheet name="Required" type="Input" />
         <dataSheet name="TilingOptions" type="Input" />
@@ -123,7 +123,7 @@
       programName="python"
       programArguments="omniscapeTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3">
+      condaEnvVersion="3.0">
         <dataSheet name="ResistanceOptions" type="Input" />
         <dataSheet name="Required" type="Input" />
         <dataSheet name="TilingOptions" type="Input" />
@@ -138,15 +138,15 @@
         <dataSheet name="ReclassTable" type="Input" />
     </transformer>
 
-    <transformer 
-      name="movementCategoriesTransformer" 
-      displayName="2 - Categorize Connectivity Output" 
-      transformerSpecificOutput="False" 
-      isRunnable="True" 
-      programName="python" 
-      programArguments="movementCategoriesTransformer.py" 
+    <transformer
+      name="movementCategoriesTransformer"
+      displayName="2 - Categorize Connectivity Output"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="movementCategoriesTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3">
+      condaEnvVersion="3.0">
         <dataSheet name="reclassificationThresholds" type="Input" />
         <dataSheet name="outputTabularReclassification" type="Output" />
         <dataSheet name="outputSpatialMovement" type="Output" />
