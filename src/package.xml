@@ -108,7 +108,7 @@
       programName="python"
       programArguments="prepMultiprocessingTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3.0"
+      condaEnvVersion="3.5"
       isMultiprocessing="False">
         <dataSheet name="Required" type="Input" />
         <dataSheet name="TilingOptions" type="Input" />
@@ -123,7 +123,7 @@
       programName="python"
       programArguments="omniscapeTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3.0">
+      condaEnvVersion="3.5">
         <dataSheet name="ResistanceOptions" type="Input" />
         <dataSheet name="Required" type="Input" />
         <dataSheet name="TilingOptions" type="Input" />
@@ -146,7 +146,7 @@
       programName="python"
       programArguments="movementCategoriesTransformer.py"
       condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3.0">
+      condaEnvVersion="3.5">
         <dataSheet name="reclassificationThresholds" type="Input" />
         <dataSheet name="outputTabularReclassification" type="Output" />
         <dataSheet name="outputSpatialMovement" type="Output" />
