@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<update comment="Update to omniscape 2.5 that migrates Julia configuration and adds tiling options">
+<update comment="Update to omniscape 2.5 that migrates Julia configuration">
 
     <!-- Migrate Julia configuration from omniscape_juliaConfiguration to core_JlConfig -->
     <action code="CopyTable" fromTableName="omniscape_juliaConfiguration" toTableName="core_JlConfig">
@@ -8,10 +8,6 @@
 
     <!-- Delete the old package-specific Julia configuration table -->
     <action code="DeleteTable" tableName="omniscape_juliaConfiguration">
-    </action>
-
-    <!-- Add new PadBeyondBoundary column to TilingOptions (default: Yes/True) -->
-    <action code="AddColumn" tableName="omniscape_TilingOptions" columnName="PadBeyondBoundary" dataType="Boolean" defaultValue="1">
     </action>
 
 </update>

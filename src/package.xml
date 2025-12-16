@@ -45,8 +45,7 @@
 
       <dataSheet name="TilingOptions" displayName="Tiling Options" isSingleRow="True">
           <column name="TileCount" displayName="Tile Count" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="1" isOptional="True" description="Number of spatial tiles for multiprocessing. Leave empty for auto-calculation. Set to 1 to disable tiling." />
-          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile to reduce edge effects. Recommended: Set equal to Omniscape radius." />
-          <column name="PadBeyondBoundary" displayName="Pad Beyond Boundary" dataType="Boolean" isOptional="True" defaultValue="-1" description="When enabled, tiles at raster edges are padded beyond the boundary with replicated edge values. When disabled, only real overlapping data is used for buffering." />
+          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile. Uses real overlapping data only - no padding beyond raster boundary. Recommended: Set equal to Omniscape radius." />
       </dataSheet>
 
       <dataSheet name="ConditionalOptions" displayName="Options" isSingleRow="True">

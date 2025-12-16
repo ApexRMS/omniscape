@@ -547,7 +547,8 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
                         buffered_path,
                         cropped_path,
                         tile_info['original_extent'],
-                        manifest['buffer_pixels']
+                        manifest['buffer_pixels'],
+                        tile_info.get('buffered_extent')
                     )
 
                     os.remove(buffered_path)

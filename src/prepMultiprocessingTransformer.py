@@ -112,11 +112,11 @@ def calculate_optimal_grid(width, height, desired_tile_count):
 
 
 def crop_and_buffer_raster(input_path, output_path, tile_extent, buffer_pixels,
-                           raster_width, raster_height, transform, crs, pad_beyond_boundary=True):
+                           raster_width, raster_height, transform, crs):
     """
-    Crop raster with buffer using HYBRID approach:
+    Crop raster with buffer using real overlapping data only.
     - Use real overlapping data where available (internal boundaries)
-    - Optionally use fake padding at raster boundaries (where no data exists)
+    - No padding beyond raster boundaries (only real data)
 
     Args:
         input_path: Path to input raster
@@ -127,11 +127,9 @@ def crop_and_buffer_raster(input_path, output_path, tile_extent, buffer_pixels,
         raster_height: Full raster height
         transform: Affine transform from full raster
         crs: CRS from full raster
-        pad_beyond_boundary: If True, pad beyond raster edges with fake data.
-                            If False, only use real overlapping data.
 
     Returns:
-        tuple: (actual_extent, padding_info)
+        tuple: (actual_extent, buffer_info)
     """
     row_start, row_end, col_start, col_end = tile_extent
 
@@ -160,44 +158,25 @@ def crop_and_buffer_raster(input_path, output_path, tile_extent, buffer_pixels,
         # Calculate transform for cropped area
         cropped_transform = rasterio.windows.transform(window, src.transform)
 
-        # Check if padding needed (hit raster boundaries)
-        pad_top = max(0, -row_start_buffered)  # Only if went beyond top edge
-        pad_bottom = max(0, row_end_buffered - raster_height)  # Only if went beyond bottom edge
-        pad_left = max(0, -col_start_buffered)  # Only if went beyond left edge
-        pad_right = max(0, col_end_buffered - raster_width)  # Only if went beyond right edge
+        # Check if we hit raster boundaries (for logging purposes)
+        hit_top = row_start_buffered < 0
+        hit_bottom = row_end_buffered > raster_height
+        hit_left = col_start_buffered < 0
+        hit_right = col_end_buffered > raster_width
 
-        needs_padding = (pad_top > 0 or pad_bottom > 0 or pad_left > 0 or pad_right > 0)
+        # Use only real data (no padding)
+        final_data = data
+        final_transform = cropped_transform
 
-        if needs_padding and pad_beyond_boundary:
-            # Pad only the sides that hit boundaries with fake data
-            padded_data = np.pad(
-                data,
-                ((pad_top, pad_bottom), (pad_left, pad_right)),
-                mode='edge'  # Replicate edge values
-            )
-
-            # Update transform to account for padding
-            final_transform = rasterio.Affine(
-                cropped_transform.a,
-                cropped_transform.b,
-                cropped_transform.c - (pad_left * cropped_transform.a),
-                cropped_transform.d,
-                cropped_transform.e,
-                cropped_transform.f - (pad_top * cropped_transform.e)
-            )
-
-            final_data = padded_data
-            padding_info = f"padded: top={pad_top}, bottom={pad_bottom}, left={pad_left}, right={pad_right}"
-        elif needs_padding and not pad_beyond_boundary:
-            # Hit boundary but padding disabled - only use real data
-            final_data = data
-            final_transform = cropped_transform
-            padding_info = f"real data only (no padding at boundary: top={pad_top}, bottom={pad_bottom}, left={pad_left}, right={pad_right})"
+        if hit_top or hit_bottom or hit_left or hit_right:
+            boundaries_hit = []
+            if hit_top: boundaries_hit.append("top")
+            if hit_bottom: boundaries_hit.append("bottom")
+            if hit_left: boundaries_hit.append("left")
+            if hit_right: boundaries_hit.append("right")
+            buffer_info = f"real data only (clipped at {', '.join(boundaries_hit)})"
         else:
-            # No padding needed - all real data
-            final_data = data
-            final_transform = cropped_transform
-            padding_info = "no padding (all real data)"
+            buffer_info = "all real overlapping data"
 
         # Write output
         with rasterio.open(
@@ -214,14 +193,16 @@ def crop_and_buffer_raster(input_path, output_path, tile_extent, buffer_pixels,
         ) as dst:
             dst.write(final_data, 1)
 
+        # Return the actual clipped extent (what was really written)
+        # NOT the buffered extent (which may be negative or beyond bounds)
         actual_extent = {
-            "row_start": row_start_buffered,
-            "row_end": row_end_buffered,
-            "col_start": col_start_buffered,
-            "col_end": col_end_buffered
+            "row_start": row_start_clipped,
+            "row_end": row_end_clipped,
+            "col_start": col_start_clipped,
+            "col_end": col_end_clipped
         }
 
-        return actual_extent, padding_info
+        return actual_extent, buffer_info
 
 
 # ============================================================================
@@ -262,14 +243,7 @@ if not tilingOptions.empty and 'BufferPixels' in tilingOptions.columns:
     if not pd.isna(tilingOptions.BufferPixels.item()):
         buffer_pixels = int(tilingOptions.BufferPixels.item())
 
-# Get pad beyond boundary option (default: True for backward compatibility)
-pad_beyond_boundary = True
-if not tilingOptions.empty and 'PadBeyondBoundary' in tilingOptions.columns:
-    if not pd.isna(tilingOptions.PadBeyondBoundary.item()):
-        pad_beyond_boundary = (tilingOptions.PadBeyondBoundary.item() == "Yes")
-
-ps.environment.update_run_log(f"Buffer configuration: {buffer_pixels} pixels")
-ps.environment.update_run_log(f"Pad beyond boundary: {'Yes' if pad_beyond_boundary else 'No'}")
+ps.environment.update_run_log(f"Buffer configuration: {buffer_pixels} pixels (real overlapping data only)")
 
 ps.environment.progress_bar(message="Analyzing raster dimensions", report_type="message")
 
@@ -466,11 +440,10 @@ for row in range(tile_dim_rows):
         tile_resistance_path = os.path.join(tiles_dir, f"tile-{tile_id}-resistance.tif")
 
         if buffer_pixels > 0:
-            # Hybrid buffering: real data where available, optional fake padding at raster edges
-            mode_desc = "real data + fake padding" if pad_beyond_boundary else "real data only"
-            ps.environment.update_run_log(f"  Applying {buffer_pixels}-pixel buffer ({mode_desc})")
+            # Use real overlapping data only (no padding beyond raster boundary)
+            ps.environment.update_run_log(f"  Applying {buffer_pixels}-pixel buffer (real overlapping data only)")
 
-            buffered_extent, padding_info = crop_and_buffer_raster(
+            buffered_extent, buffer_info = crop_and_buffer_raster(
                 resistancePath,
                 tile_resistance_path,
                 (row_start, row_end, col_start, col_end),
@@ -478,18 +451,17 @@ for row in range(tile_dim_rows):
                 width,
                 height,
                 transform,
-                crs,
-                pad_beyond_boundary
+                crs
             )
 
-            ps.environment.update_run_log(f"    Resistance: {padding_info}")
+            ps.environment.update_run_log(f"    Resistance: {buffer_info}")
 
             # Crop and buffer source (if exists)
             tile_source_path = None
             if sourcePath:
                 tile_source_path = os.path.join(tiles_dir, f"tile-{tile_id}-source.tif")
 
-                _, source_padding_info = crop_and_buffer_raster(
+                _, source_buffer_info = crop_and_buffer_raster(
                     sourcePath,
                     tile_source_path,
                     (row_start, row_end, col_start, col_end),
@@ -497,11 +469,10 @@ for row in range(tile_dim_rows):
                     width,
                     height,
                     transform,
-                    crs,
-                    pad_beyond_boundary
+                    crs
                 )
 
-                ps.environment.update_run_log(f"    Source: {source_padding_info}")
+                ps.environment.update_run_log(f"    Source: {source_buffer_info}")
         else:
             # No buffer - just crop
             crop_raster_to_extent(

@@ -103,33 +103,43 @@ def determine_execution_mode(myLibrary, manifest):
 # BUFFER PROCESSING FUNCTIONS
 # ============================================================================
 
-def crop_buffer_from_output(buffered_path, output_path, original_extent, buffer_pixels):
+def crop_buffer_from_output(buffered_path, output_path, original_extent, buffer_pixels, buffered_extent=None):
     """
     Remove buffer from output raster.
 
     Args:
         buffered_path: Path to buffered raster
         output_path: Path for cropped output
-        original_extent: Dict with row_start, row_end, col_start, col_end
+        original_extent: Dict with row_start, row_end, col_start, col_end (unbuffered tile extent)
         buffer_pixels: Buffer size used
+        buffered_extent: Optional dict with actual buffered extent (after clipping to raster bounds)
     """
     with rasterio.open(buffered_path) as src:
-        # Log buffered raster info
+        # Calculate actual offset (handles cases where buffer is missing at raster edges)
+        if buffered_extent:
+            # Calculate actual buffer offset on each side
+            row_offset = original_extent["row_start"] - buffered_extent["row_start"]
+            col_offset = original_extent["col_start"] - buffered_extent["col_start"]
+        else:
+            # Fallback: assume full buffer (backward compatibility)
+            row_offset = buffer_pixels
+            col_offset = buffer_pixels
+
         ps.environment.update_run_log(
             f"[crop_buffer] Buffered raster: {src.height}x{src.width}, "
-            f"removing {buffer_pixels}px buffer"
+            f"removing buffer (offsets: row={row_offset}, col={col_offset})"
         )
 
         # Create window to extract original extent
         window = Window(
-            buffer_pixels,
-            buffer_pixels,
+            col_offset,
+            row_offset,
             original_extent["col_end"] - original_extent["col_start"],
             original_extent["row_end"] - original_extent["row_start"]
         )
 
         ps.environment.update_run_log(
-            f"[crop_buffer] Crop window: col_off={buffer_pixels}, row_off={buffer_pixels}, "
+            f"[crop_buffer] Crop window: col_off={col_offset}, row_off={row_offset}, "
             f"width={window.width}, height={window.height}"
         )
 
