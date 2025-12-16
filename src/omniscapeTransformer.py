@@ -107,6 +107,65 @@ else:
             report_type="message"
         )
 
+# ============================================================================
+# CALCULATE HIERARCHICAL PARALLELIZATION (Option A: Julia -t flag only)
+# ============================================================================
+
+julia_workers_per_tile = 1  # Default: no Julia parallelization
+
+if multiprocessing.EnableMultiprocessing.item() == "Yes":
+    total_workers = int(multiprocessing.MaximumJobs.item())
+
+    if is_tiling:
+        num_tiles = manifest['tile_count']
+
+        if mode == "loop":
+            # Loop mode: tiles run sequentially, each tile gets ALL workers
+            julia_workers_per_tile = total_workers
+            ps.environment.update_run_log(
+                f"Loop mode parallelization: {num_tiles} tiles (sequential) × {julia_workers_per_tile} Julia workers/tile"
+            )
+        else:
+            # Multiprocessing mode: divide workers across tiles running in parallel
+            julia_workers_per_tile = max(1, total_workers // num_tiles)
+
+            # Calculate actual utilization
+            actual_workers_used = num_tiles * julia_workers_per_tile
+            efficiency = (actual_workers_used / total_workers) * 100
+
+            # Log parallelization strategy
+            ps.environment.update_run_log(
+                f"Hierarchical parallelization: {num_tiles} tiles × {julia_workers_per_tile} Julia workers/tile "
+                f"= {actual_workers_used} total workers ({efficiency:.0f}% of requested {total_workers})"
+            )
+
+            # Warning if low efficiency
+            if efficiency < 75 and total_workers > 2:
+                ps.environment.update_run_log(
+                    f"WARNING: Low worker efficiency ({efficiency:.0f}%). Consider adjusting tile count "
+                    f"to better divide {total_workers} workers."
+                )
+
+            # Check for over-subscription
+            import os
+            physical_cores = os.cpu_count() or 1
+            potential_workers = num_tiles * julia_workers_per_tile
+
+            if potential_workers > physical_cores * 1.5:
+                ps.environment.update_run_log(
+                    f"WARNING: Potential over-subscription detected! "
+                    f"{potential_workers} workers requested but only {physical_cores} physical cores available. "
+                    f"Performance may degrade due to context switching."
+                )
+    else:
+        # Non-tiling mode: use all available workers
+        julia_workers_per_tile = total_workers
+        ps.environment.update_run_log(f"Non-tiling parallelization: {julia_workers_per_tile} Julia workers")
+else:
+    # Multiprocessing disabled: single-threaded
+    julia_workers_per_tile = 1
+    ps.environment.update_run_log("Multiprocessing disabled: single-threaded execution")
+
 # Store original resistance path for output datasheet
 original_resistance_path = requiredDataValidation.resistanceFile.item()
 
@@ -411,21 +470,14 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "\n"
     )
 
-    # Disable Julia multiprocessing when tiling (parallelism from spatial tiling)
-    if is_tiling:
-        config_file.write(
-            "[Multiprocessing]" + "\n"
-            "parallelize = false" + "\n"
-            "parallel_batch_size = 1" + "\n"
-        )
-    else:
-        config_file.write(
-            "[Multiprocessing]" + "\n"
-            "parallelize = " + multiprocessing.EnableMultiprocessing.item() + "\n"
-            "parallel_batch_size = " + repr(multiprocessing.MaximumJobs.item()) + "\n"
-        )
-
-    config_file.write("\n")
+    # Option A: ALWAYS disable Omniscape.jl's internal parallelization
+    # Parallelization is controlled via Julia's -t flag instead
+    config_file.write(
+        "[Multiprocessing]" + "\n"
+        "parallelize = false" + "\n"
+        "parallel_batch_size = 1" + "\n"
+        "\n"
+    )
     config_file.close()
 
     # ========================================================================
@@ -448,14 +500,17 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
 
     runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
 
-    # Disable Julia multithreading when tiling
-    if is_tiling:
-        runOmniscape = f"{jlExe} {runFile}"
-    elif multiprocessing.EnableMultiprocessing.item() == "true":
-        numThreads = int(multiprocessing.MaximumJobs.item())
-        runOmniscape = f"{jlExe} -t {numThreads} {runFile}"
+    # ========================================================================
+    # CONFIGURE JULIA THREADING (Option A: -t flag only)
+    # ========================================================================
+
+    # Build command with threading based on calculated julia_workers_per_tile
+    if julia_workers_per_tile > 1:
+        runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
+        ps.environment.update_run_log(f"Julia threading: {julia_workers_per_tile} threads")
     else:
         runOmniscape = f"{jlExe} {runFile}"
+        ps.environment.update_run_log(f"Julia threading: disabled (single-threaded)")
 
     ps.environment.update_run_log(f"Executing: {runOmniscape}")
     ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
