@@ -1,10 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.5.0" minSyncroSimVersion="3.1.0">
-            
-      <dataSheet name="juliaConfiguration" displayName="Julia Configuration" dataScope="Library" isSingleRow="True">
-          <column name="juliaPath" displayName="Julia executable" dataType="String" isExternalFile="True" allowDbNull="False" externalFileAbsolute="True" />
-      </dataSheet>
-      
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.6.0" minSyncroSimVersion="3.1.0">
+
       <dataSheet name="movementTypes" displayName="Connectivity Categories" dataScope="Project" displayMember="Name">
           <column name="Name" dataType="String" />
           <column name="classID" displayName="Category ID" dataType="Integer" validationType="WholeNumber" validationCondition="None" />
@@ -49,7 +45,8 @@
 
       <dataSheet name="TilingOptions" displayName="Tiling Options" isSingleRow="True">
           <column name="TileCount" displayName="Tile Count" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="1" isOptional="True" description="Number of spatial tiles for multiprocessing. Leave empty for auto-calculation. Set to 1 to disable tiling." />
-          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile to reduce edge effects. Recommended: 50-200 pixels." />
+          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile to reduce edge effects. Recommended: Set equal to Omniscape radius." />
+          <column name="PadBeyondBoundary" displayName="Pad Beyond Boundary" dataType="Boolean" isOptional="True" defaultValue="-1" description="When enabled, tiles at raster edges are padded beyond the boundary with replicated edge values. When disabled, only real overlapping data is used for buffering." />
       </dataSheet>
 
       <dataSheet name="ConditionalOptions" displayName="Options" isSingleRow="True">
@@ -152,10 +149,6 @@
         <dataSheet name="outputSpatialMovement" type="Output" />
         <dataSheet name="outputSpatial" type="Input" />
     </transformer>
-
-    <layout type="Library">
-      <item name="juliaConfiguration" />
-    </layout>
 
     <layout type="Project">
       <item name="movementTypes" />
