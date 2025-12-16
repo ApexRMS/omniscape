@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<update comment="Update to omniscape 2.6 that adds PadBeyondBoundary option to TilingOptions">
+
+    <!-- Add new PadBeyondBoundary column to TilingOptions (default: -1 which means Yes/True) -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_TilingOptions">
+        <item>ALTER TABLE omniscape_TilingOptions ADD COLUMN PadBeyondBoundary INTEGER DEFAULT -1</item>
+    </action>
+
+</update>

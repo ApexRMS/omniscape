@@ -62,7 +62,7 @@ conditionalOptions = myScenario.datasheets(name = "omniscape_ConditionalOptions"
 futureConditions = myScenario.datasheets(name = "omniscape_FutureConditions")
 outputOptions = myScenario.datasheets(name = "omniscape_OutputOptions")
 multiprocessing = myScenario.datasheets(name = "core_Multiprocessing")
-juliaConfig = myScenario.datasheets(name = "omniscape_juliaConfiguration")
+juliaConfig = myLibrary.datasheets(name = "core_JlConfig")  # Julia config is now at library level
 
 # ============================================================================
 # LOAD TILE MANIFEST AND DETERMINE EXECUTION MODE
@@ -259,16 +259,16 @@ if outputOptions.writeAsTif.item() != outputOptions.writeAsTif.item():
 
 # Validation -------------------------------------------------------------------
 
-if juliaConfig.juliaPath.empty:
-    sys.exit("A julia executable is required.")
+if juliaConfig.ExePath.empty:
+    sys.exit("A julia executable is required. Please configure it in Library > Options > Julia Tools.")
 
-if not os.path.isfile(juliaConfig.juliaPath.item()):
-    sys.exit("The path to the julia executable is not valid or does not exist.")
+if not os.path.isfile(juliaConfig.ExePath.item()):
+    sys.exit("The path to the julia executable is not valid or does not exist. Please check Library > Options > Julia Tools.")
 
-if ' ' in juliaConfig.juliaPath.item():
-    sys.exit("The path to the julia executable may not contains spaces.")
+if ' ' in juliaConfig.ExePath.item():
+    sys.exit("The path to the julia executable may not contain spaces.")
 
-if not 'julia.exe' in juliaConfig.juliaPath.item():
+if not 'julia.exe' in juliaConfig.ExePath.item():
     sys.exit("The path to the julia executable must contain the 'julia.exe' file.")
 
 if multiprocessing.EnableMultiprocessing.item() == "Yes":
@@ -365,7 +365,7 @@ else:
 # ============================================================================
 
 # Prepare Julia executable
-jlExe = juliaConfig.juliaPath.item()
+jlExe = juliaConfig.ExePath.item()
 
 if ' ' in dataPath:
     sys.exit("Due to julia requirements, the path to the SyncroSim Library may not contain any spaces.")
