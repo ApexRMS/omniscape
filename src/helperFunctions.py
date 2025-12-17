@@ -139,8 +139,21 @@ def crop_buffer_from_output(buffered_path, output_path, original_extent, buffer_
         )
 
         ps.environment.update_run_log(
+            f"[crop_buffer] Original extent: rows [{original_extent['row_start']}:{original_extent['row_end']}], "
+            f"cols [{original_extent['col_start']}:{original_extent['col_end']}]"
+        )
+        if buffered_extent:
+            ps.environment.update_run_log(
+                f"[crop_buffer] Buffered extent: rows [{buffered_extent['row_start']}:{buffered_extent['row_end']}], "
+                f"cols [{buffered_extent['col_start']}:{buffered_extent['col_end']}]"
+            )
+        ps.environment.update_run_log(
             f"[crop_buffer] Crop window: col_off={col_offset}, row_off={row_offset}, "
             f"width={window.width}, height={window.height}"
+        )
+        ps.environment.update_run_log(
+            f"[crop_buffer] Extracting pixels: rows [{row_offset}:{row_offset+window.height}], "
+            f"cols [{col_offset}:{col_offset+window.width}] from buffered raster"
         )
 
         data = src.read(1, window=window)
@@ -228,11 +241,19 @@ def extend_tile_to_full_extent(tile_raster_path, output_path, full_extent, full_
     row_end = min(row_offset + tile_height, full_height)
     col_end = min(col_offset + tile_width, full_width)
 
-    # Diagnostic logging
+    # Diagnostic logging with explicit pixel ranges
     ps.environment.update_run_log(
         f"[extend_tile_to_full_extent] Tile size: {tile_height}x{tile_width}, "
-        f"Full extent: {full_height}x{full_width}, "
-        f"Placement: [{row_offset}:{row_end}, {col_offset}:{col_end}]"
+        f"Full extent: {full_height}x{full_width}"
+    )
+    ps.environment.update_run_log(
+        f"[extend_tile_to_full_extent] Placing tile data:"
+    )
+    ps.environment.update_run_log(
+        f"  Rows: [{row_offset}:{row_end}] (pixels {row_offset} to {row_end-1})"
+    )
+    ps.environment.update_run_log(
+        f"  Cols: [{col_offset}:{col_end}] (pixels {col_offset} to {col_end-1})"
     )
 
     # Check for out-of-bounds placement
