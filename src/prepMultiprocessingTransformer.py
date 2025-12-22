@@ -298,6 +298,13 @@ ps.environment.update_run_log(
     f"Buffer configuration: {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius of {radius})"
 )
 
+# Get RAM per thread estimate (for memory calculations)
+ram_per_thread_gb = 16  # default
+if not tilingOptions.empty and 'RamPerThreadGB' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.RamPerThreadGB.item()):
+        ram_per_thread_gb = int(tilingOptions.RamPerThreadGB.item())
+ps.environment.update_run_log(f"RAM per thread estimate: {ram_per_thread_gb} GB")
+
 # Validate buffer vs radius
 if buffer_multiplier < 1.0:
     ps.environment.update_run_log(
@@ -669,14 +676,57 @@ actual_speedup = min(tile_count, ideal_speedup) * overhead_factor
 ps.environment.update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
 ps.environment.update_run_log(" ")
 
-# Memory estimate (rough calculation)
-bytes_per_pixel = 8  # Assume float64 for safety
-tile_memory_mb = (tile_width * tile_height * bytes_per_pixel) / (1024 * 1024)
-peak_memory_mb = tile_memory_mb * min(tile_count, available_cores)
+# Memory estimates with Julia threading consideration
+try:
+    import psutil
+    ramGB = psutil.virtual_memory().total / (1024**3)
+    available_ram_mb = ramGB * 1024
+    ram_available = True
+except ImportError:
+    ps.environment.update_run_log("WARNING: psutil not available, cannot check system RAM")
+    ramGB = 0
+    available_ram_mb = 0
+    ram_available = False
+
+# Estimate RAM per tile based on Julia threading
+# In multiprocessing mode, each tile will use julia_workers_per_tile threads
+# We need to calculate this based on the intensity setting
+intensity_multipliers = {
+    "Auto": 2.0,
+    "Conservative": 1.0,
+    "Balanced": 2.0,
+    "Aggressive": 4.0
+}
+multiplier = intensity_multipliers.get(intensity, 2.0)
+target_tile_count_cores = int(available_cores * multiplier)
+# Estimate julia workers per tile (same calculation as omniscapeTransformer)
+estimated_julia_workers_per_tile = max(1, available_cores // min(tile_count, target_tile_count_cores))
+
+# RAM estimate: threads × RAM per thread
+estimated_ram_per_tile_mb = estimated_julia_workers_per_tile * ram_per_thread_gb * 1024
+
+# Peak RAM depends on how many tiles run simultaneously
+simultaneous_tiles = min(tile_count, available_cores)
+estimated_peak_ram_mb = estimated_ram_per_tile_mb * simultaneous_tiles
 
 ps.environment.update_run_log("Memory Estimates:")
-ps.environment.update_run_log(f"  Per tile:              ~{tile_memory_mb:.1f} MB")
-ps.environment.update_run_log(f"  Peak (all cores):      ~{peak_memory_mb:.1f} MB")
+if ram_available:
+    ps.environment.update_run_log(f"  Available RAM:         {ramGB:.1f} GB ({available_ram_mb:.0f} MB)")
+ps.environment.update_run_log(f"  Per tile (estimated):  ~{estimated_ram_per_tile_mb:.0f} MB ({estimated_julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread)")
+ps.environment.update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({simultaneous_tiles} tiles simultaneously)")
+
+# Warning if estimated usage exceeds available RAM
+if ram_available and estimated_peak_ram_mb > available_ram_mb:
+    ps.environment.update_run_log(" ")
+    ps.environment.update_run_log("WARNING: Estimated memory usage exceeds available RAM!")
+    ps.environment.update_run_log(f"  Estimated peak: {estimated_peak_ram_mb:.0f} MB")
+    ps.environment.update_run_log(f"  Available RAM:  {available_ram_mb:.0f} MB")
+    ps.environment.update_run_log(f"  Recommendations:")
+    ps.environment.update_run_log(f"    - Use 'Conservative' parallelization intensity")
+    recommended_cores = max(1, int(available_ram_mb / estimated_ram_per_tile_mb))
+    ps.environment.update_run_log(f"    - Reduce MaximumJobs to {recommended_cores} or lower")
+    ps.environment.update_run_log(f"    - Reduce RamPerThreadGB if estimate is too conservative")
+
 ps.environment.update_run_log("=" * 70)
 ps.environment.update_run_log(" ")
 

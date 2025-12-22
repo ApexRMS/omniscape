@@ -62,6 +62,7 @@ conditionalOptions = myScenario.datasheets(name = "omniscape_ConditionalOptions"
 futureConditions = myScenario.datasheets(name = "omniscape_FutureConditions")
 outputOptions = myScenario.datasheets(name = "omniscape_OutputOptions")
 multiprocessing = myScenario.datasheets(name = "core_Multiprocessing")
+tilingOptions = myScenario.datasheets(name = "omniscape_TilingOptions")
 juliaConfig = myLibrary.datasheets(name = "core_JlConfig")  # Julia config is now at library level
 
 # ============================================================================
@@ -165,6 +166,53 @@ else:
     # Multiprocessing disabled: single-threaded
     julia_workers_per_tile = 1
     ps.environment.update_run_log("Multiprocessing disabled: single-threaded execution")
+
+# ============================================================================
+# APPLY RAM-BASED CAP (Option A: Memory Management)
+# ============================================================================
+
+# Get RAM per thread estimate from tiling options
+ram_per_thread_gb = 16  # default
+if not tilingOptions.empty and 'RamPerThreadGB' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.RamPerThreadGB.item()):
+        ram_per_thread_gb = int(tilingOptions.RamPerThreadGB.item())
+
+# Check available RAM and apply constraint
+try:
+    import psutil
+    ramGB = psutil.virtual_memory().total / (1024**3)
+
+    # Calculate maximum threads based on available RAM
+    max_threads_by_ram = max(1, int(ramGB / ram_per_thread_gb))
+
+    # Apply RAM constraint if necessary
+    if julia_workers_per_tile > max_threads_by_ram:
+        original_workers = julia_workers_per_tile
+        julia_workers_per_tile = max_threads_by_ram
+        ps.environment.update_run_log(" ")
+        ps.environment.update_run_log("=" * 70)
+        ps.environment.update_run_log("MEMORY CONSTRAINT APPLIED")
+        ps.environment.update_run_log("=" * 70)
+        ps.environment.update_run_log(
+            f"Reducing Julia threads from {original_workers} to {julia_workers_per_tile} "
+            f"based on available RAM ({ramGB:.1f} GB)"
+        )
+        ps.environment.update_run_log(
+            f"Estimated RAM usage: {julia_workers_per_tile * ram_per_thread_gb:.1f} GB "
+            f"({ram_per_thread_gb} GB/thread × {julia_workers_per_tile} threads)"
+        )
+        ps.environment.update_run_log(
+            f"To use more threads, increase system RAM or reduce RamPerThreadGB setting"
+        )
+        ps.environment.update_run_log("=" * 70)
+        ps.environment.update_run_log(" ")
+    else:
+        ps.environment.update_run_log(
+            f"RAM check: {julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread "
+            f"= {julia_workers_per_tile * ram_per_thread_gb:.1f} GB (within {ramGB:.1f} GB available)"
+        )
+except ImportError:
+    ps.environment.update_run_log("WARNING: psutil not available, skipping RAM-based thread cap")
 
 # Store original resistance path for output datasheet
 original_resistance_path = requiredDataValidation.resistanceFile.item()
