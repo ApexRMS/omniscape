@@ -261,19 +261,29 @@ if not multiprocessing.empty and 'MaximumJobs' in multiprocessing.columns:
 ps.environment.update_run_log(f"Available cores (MaximumJobs): {available_cores}")
 
 # Get parallelization intensity
+# Map intensity ID to name (0:Auto, 1:Conservative, 2:Balanced, 3:Aggressive)
+intensity_map = {
+    0: "Auto",
+    1: "Conservative",
+    2: "Balanced",
+    3: "Aggressive"
+}
 intensity = "Auto"  # default
 if not tilingOptions.empty and 'ParallelizationIntensity' in tilingOptions.columns:
     if not pd.isna(tilingOptions.ParallelizationIntensity.item()):
-        user_intensity = tilingOptions.ParallelizationIntensity.item().strip()
-        # Validate intensity value
-        valid_intensities = ["Auto", "Conservative", "Balanced", "Aggressive"]
-        if user_intensity in valid_intensities:
-            intensity = user_intensity
+        intensity_value = tilingOptions.ParallelizationIntensity.item()
+        # Handle both old string values and new integer IDs (backward compatibility)
+        if isinstance(intensity_value, str):
+            # Old format: string value
+            intensity_value = intensity_value.strip()
+            if intensity_value in ["Auto", "Conservative", "Balanced", "Aggressive"]:
+                intensity = intensity_value
+            else:
+                ps.environment.update_run_log(f"WARNING: Invalid intensity '{intensity_value}'. Using 'Auto'.")
         else:
-            ps.environment.update_run_log(
-                f"WARNING: Invalid ParallelizationIntensity '{user_intensity}'. "
-                f"Valid values: {', '.join(valid_intensities)}. Using default 'Auto'."
-            )
+            # New format: integer ID
+            intensity_id = int(intensity_value)
+            intensity = intensity_map.get(intensity_id, "Auto")
 ps.environment.update_run_log(f"Parallelization intensity: {intensity}")
 
 # Get buffer multiplier
@@ -632,19 +642,19 @@ ps.environment.update_run_log(f"Tile manifest saved: {manifest_path}")
 # TILING CONFIGURATION SUMMARY
 # ============================================================================
 
-ps.environment.update_run_log("")
+ps.environment.update_run_log(" ")
 ps.environment.update_run_log("=" * 70)
 ps.environment.update_run_log("TILING CONFIGURATION SUMMARY")
 ps.environment.update_run_log("=" * 70)
 ps.environment.update_run_log(f"Raster: {width} × {height} pixels ({valid_pixels:,} valid)")
-ps.environment.update_run_log(f"")
-ps.environment.update_run_log(f"Tile Configuration:")
+ps.environment.update_run_log(" ")
+ps.environment.update_run_log("Tile Configuration:")
 ps.environment.update_run_log(f"  Grid layout:           {grid_desc} = {tile_count} tiles")
 ps.environment.update_run_log(f"  Tile dimensions:       {tile_width} × {tile_height} pixels")
 ps.environment.update_run_log(f"  Buffer applied:        {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius)")
 ps.environment.update_run_log(f"  Effective tile size:   {effective_tile_width} × {effective_tile_height} pixels")
-ps.environment.update_run_log(f"")
-ps.environment.update_run_log(f"Parallelization:")
+ps.environment.update_run_log(" ")
+ps.environment.update_run_log("Parallelization:")
 ps.environment.update_run_log(f"  Available cores:       {available_cores}")
 ps.environment.update_run_log(f"  Intensity setting:     {intensity}")
 ps.environment.update_run_log(f"  Simultaneous tiles:    {min(tile_count, available_cores)}")
@@ -657,18 +667,18 @@ overhead_factor = 0.85  # 15% overhead for I/O, merging, etc.
 actual_speedup = min(tile_count, ideal_speedup) * overhead_factor
 
 ps.environment.update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
-ps.environment.update_run_log(f"")
+ps.environment.update_run_log(" ")
 
 # Memory estimate (rough calculation)
 bytes_per_pixel = 8  # Assume float64 for safety
 tile_memory_mb = (tile_width * tile_height * bytes_per_pixel) / (1024 * 1024)
 peak_memory_mb = tile_memory_mb * min(tile_count, available_cores)
 
-ps.environment.update_run_log(f"Memory Estimates:")
+ps.environment.update_run_log("Memory Estimates:")
 ps.environment.update_run_log(f"  Per tile:              ~{tile_memory_mb:.1f} MB")
 ps.environment.update_run_log(f"  Peak (all cores):      ~{peak_memory_mb:.1f} MB")
 ps.environment.update_run_log("=" * 70)
-ps.environment.update_run_log("")
+ps.environment.update_run_log(" ")
 
 ps.environment.progress_bar(message="PrepMultiprocessing complete", report_type="message")
 ps.environment.update_run_log("PrepMultiprocessing => Complete")
