@@ -44,8 +44,8 @@
       </dataSheet>
 
       <dataSheet name="TilingOptions" displayName="Tiling Options" isSingleRow="True">
-          <column name="TileCount" displayName="Tile Count" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="1" isOptional="True" description="Number of spatial tiles for multiprocessing. Leave empty for auto-calculation. Set to 1 to disable tiling." />
-          <column name="BufferPixels" displayName="Buffer Pixels" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="0" isOptional="True" defaultValue="0" description="Number of pixels to buffer around each tile. Uses real overlapping data only - no padding beyond raster boundary. Recommended: Set equal to Omniscape radius." />
+          <column name="ParallelizationIntensity" displayName="Parallelization Intensity" dataType="String" isOptional="True" defaultValue="Auto" description="Controls tile count for multiprocessing. Valid values: Auto (default - smart calculation), Conservative (1× cores), Balanced (2× cores), Aggressive (4× cores). Leave empty or set to Auto for automatic calculation." />
+          <column name="BufferMultiplier" displayName="Buffer Size" dataType="Double" validationType="Decimal" validationCondition="GreaterEqual" formula1="0.5" isOptional="True" defaultValue="1.0" description="Buffer size as multiple of radius. Default 1.0 means buffer equals radius. Larger values (1.5-2.0) reduce edge effects but increase memory. Smaller values (0.5) reduce memory but may cause edge artifacts." />
       </dataSheet>
 
       <dataSheet name="ConditionalOptions" displayName="Options" isSingleRow="True">

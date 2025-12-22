@@ -260,27 +260,40 @@ if not multiprocessing.empty and 'MaximumJobs' in multiprocessing.columns:
         available_cores = int(multiprocessing.MaximumJobs.item())
 ps.environment.update_run_log(f"Available cores (MaximumJobs): {available_cores}")
 
-# Get buffer configuration (auto-default to radius if not specified)
-buffer_pixels = None
-if not tilingOptions.empty and 'BufferPixels' in tilingOptions.columns:
-    if not pd.isna(tilingOptions.BufferPixels.item()):
-        buffer_pixels = int(tilingOptions.BufferPixels.item())
+# Get parallelization intensity
+intensity = "Auto"  # default
+if not tilingOptions.empty and 'ParallelizationIntensity' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.ParallelizationIntensity.item()):
+        user_intensity = tilingOptions.ParallelizationIntensity.item().strip()
+        # Validate intensity value
+        valid_intensities = ["Auto", "Conservative", "Balanced", "Aggressive"]
+        if user_intensity in valid_intensities:
+            intensity = user_intensity
+        else:
+            ps.environment.update_run_log(
+                f"WARNING: Invalid ParallelizationIntensity '{user_intensity}'. "
+                f"Valid values: {', '.join(valid_intensities)}. Using default 'Auto'."
+            )
+ps.environment.update_run_log(f"Parallelization intensity: {intensity}")
 
-# Auto-default buffer to radius if not specified (Option B approach)
-if buffer_pixels is None:
-    buffer_pixels = radius
-    ps.environment.update_run_log(
-        f"Buffer auto-set to {buffer_pixels} pixels (matches radius parameter)"
-    )
-else:
-    ps.environment.update_run_log(f"Buffer configured: {buffer_pixels} pixels (user-specified)")
+# Get buffer multiplier
+buffer_multiplier = 1.0  # default
+if not tilingOptions.empty and 'BufferMultiplier' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.BufferMultiplier.item()):
+        buffer_multiplier = float(tilingOptions.BufferMultiplier.item())
+
+buffer_pixels = int(radius * buffer_multiplier)
+
+ps.environment.update_run_log(
+    f"Buffer configuration: {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius of {radius})"
+)
 
 # Validate buffer vs radius
-if buffer_pixels < radius:
+if buffer_multiplier < 1.0:
     ps.environment.update_run_log(
-        f"WARNING: BufferPixels ({buffer_pixels}) < radius ({radius}). "
+        f"WARNING: Buffer multiplier ({buffer_multiplier:.1f}) < 1.0. "
         f"This may cause edge effects at tile boundaries. "
-        f"Recommend setting BufferPixels >= {radius} or leaving unset for auto-default."
+        f"Recommend setting to 1.0 or higher."
     )
 
 ps.environment.update_run_log(f"Buffer strategy: real overlapping data only (no padding beyond raster boundary)")
@@ -346,8 +359,16 @@ if valid_pixels < MIN_PIXELS_FOR_TILING:
 # 1. Maximum tiles based on minimum tile size constraint
 max_tile_count_size = int(valid_pixels // min_tile_pixels_with_buffer)
 
-# 2. Target tiles based on available cores (aim for 2x cores for load balancing)
-target_tile_count_cores = available_cores * 2
+# 2. Calculate target tiles based on intensity setting
+intensity_multipliers = {
+    "Conservative": 1.0,  # Match available cores
+    "Balanced": 2.0,      # 2× cores for load balancing
+    "Aggressive": 4.0,    # 4× cores for maximum parallelization
+    "Auto": 2.0           # Smart default (same as Balanced)
+}
+
+multiplier = intensity_multipliers.get(intensity, 2.0)
+target_tile_count_cores = int(available_cores * multiplier)
 
 # 3. Also consider a reasonable target tile size for efficiency
 # Aim for tiles that are at least 2x minimum size, or 250K pixels
@@ -357,10 +378,10 @@ target_tile_count_size = max(2, math.ceil(valid_pixels / TARGET_TILE_SIZE))
 # Choose the most conservative (smallest) tile count from all constraints
 # This ensures tiles are large enough and we don't over-parallelize
 desired_tile_count = min(
-    max_tile_count_size,
-    target_tile_count_cores,
-    target_tile_count_size,
-    100  # Absolute maximum cap
+    max_tile_count_size,      # Size constraint
+    target_tile_count_cores,  # Intensity/cores constraint
+    target_tile_count_size,   # Efficiency constraint
+    100                        # Absolute maximum cap
 )
 desired_tile_count = max(2, desired_tile_count)  # At least 2 tiles
 
@@ -371,7 +392,7 @@ ps.environment.update_run_log(f"  - Buffer requirement: {buffer_pixels} px on ea
 ps.environment.update_run_log(f"  - Minimum tile dimension with buffer: {min_tile_dimension_with_buffer} px")
 ps.environment.update_run_log(f"  - Minimum tile area: {min_tile_pixels_with_buffer:,} pixels")
 ps.environment.update_run_log(f"  - Maximum tiles (size constraint): {max_tile_count_size}")
-ps.environment.update_run_log(f"  - Target tiles (based on {available_cores} cores): {target_tile_count_cores}")
+ps.environment.update_run_log(f"  - Target tiles ({intensity} intensity, {available_cores} cores × {multiplier:.1f}): {target_tile_count_cores}")
 ps.environment.update_run_log(f"  - Target tiles (based on efficiency): {target_tile_count_size}")
 ps.environment.update_run_log(f"  - Final calculated tile count: {desired_tile_count}")
 
@@ -606,9 +627,48 @@ with open(manifest_path, 'w') as f:
     json.dump(manifest, f, indent=2)
 
 ps.environment.update_run_log(f"Tile manifest saved: {manifest_path}")
-ps.environment.update_run_log(f"Created {tile_count} pre-processed tiles")
-if buffer_pixels > 0:
-    ps.environment.update_run_log(f"  Each tile buffered by {buffer_pixels} pixels")
+
+# ============================================================================
+# TILING CONFIGURATION SUMMARY
+# ============================================================================
+
+ps.environment.update_run_log("")
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log("TILING CONFIGURATION SUMMARY")
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log(f"Raster: {width} × {height} pixels ({valid_pixels:,} valid)")
+ps.environment.update_run_log(f"")
+ps.environment.update_run_log(f"Tile Configuration:")
+ps.environment.update_run_log(f"  Grid layout:           {grid_desc} = {tile_count} tiles")
+ps.environment.update_run_log(f"  Tile dimensions:       {tile_width} × {tile_height} pixels")
+ps.environment.update_run_log(f"  Buffer applied:        {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius)")
+ps.environment.update_run_log(f"  Effective tile size:   {effective_tile_width} × {effective_tile_height} pixels")
+ps.environment.update_run_log(f"")
+ps.environment.update_run_log(f"Parallelization:")
+ps.environment.update_run_log(f"  Available cores:       {available_cores}")
+ps.environment.update_run_log(f"  Intensity setting:     {intensity}")
+ps.environment.update_run_log(f"  Simultaneous tiles:    {min(tile_count, available_cores)}")
+
+# Calculate estimated speedup
+# Account for overhead and diminishing returns
+tiles_per_batch = math.ceil(tile_count / available_cores)
+ideal_speedup = available_cores
+overhead_factor = 0.85  # 15% overhead for I/O, merging, etc.
+actual_speedup = min(tile_count, ideal_speedup) * overhead_factor
+
+ps.environment.update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
+ps.environment.update_run_log(f"")
+
+# Memory estimate (rough calculation)
+bytes_per_pixel = 8  # Assume float64 for safety
+tile_memory_mb = (tile_width * tile_height * bytes_per_pixel) / (1024 * 1024)
+peak_memory_mb = tile_memory_mb * min(tile_count, available_cores)
+
+ps.environment.update_run_log(f"Memory Estimates:")
+ps.environment.update_run_log(f"  Per tile:              ~{tile_memory_mb:.1f} MB")
+ps.environment.update_run_log(f"  Peak (all cores):      ~{peak_memory_mb:.1f} MB")
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log("")
 
 ps.environment.progress_bar(message="PrepMultiprocessing complete", report_type="message")
 ps.environment.update_run_log("PrepMultiprocessing => Complete")
