@@ -220,6 +220,8 @@ myScenario = myLibrary.scenarios(myScenarioID)
 # Load configuration datasheets
 requiredData = myScenario.datasheets(name="omniscape_Required", show_full_paths=True)
 tilingOptions = myScenario.datasheets(name="omniscape_TilingOptions")
+generalOptions = myScenario.datasheets(name="omniscape_GeneralOptions")
+multiprocessing = myScenario.datasheets(name="core_Multiprocessing")
 
 # Validation: Check if resistance file exists (template raster)
 if requiredData.empty or requiredData.resistanceFile.empty or pd.isna(requiredData.resistanceFile.item()):
@@ -237,13 +239,81 @@ if not requiredData.empty and 'sourceFile' in requiredData.columns:
         if os.path.isfile(source_file):
             sourcePath = source_file
 
-# Get buffer configuration
-buffer_pixels = 0
-if not tilingOptions.empty and 'BufferPixels' in tilingOptions.columns:
-    if not pd.isna(tilingOptions.BufferPixels.item()):
-        buffer_pixels = int(tilingOptions.BufferPixels.item())
+# Get Omniscape analysis parameters
+# Radius (required parameter)
+if requiredData.empty or 'radius' not in requiredData.columns or pd.isna(requiredData.radius.item()):
+    sys.exit("PrepMultiprocessing requires 'Radius' to be specified first. Please configure Omniscape parameters before running tiling.")
+radius = int(requiredData.radius.item())
+ps.environment.update_run_log(f"Omniscape radius: {radius} pixels")
 
-ps.environment.update_run_log(f"Buffer configuration: {buffer_pixels} pixels (real overlapping data only)")
+# Block size (optional parameter, default=1)
+block_size = 1
+if not generalOptions.empty and 'blockSize' in generalOptions.columns:
+    if not pd.isna(generalOptions.blockSize.item()):
+        block_size = int(generalOptions.blockSize.item())
+ps.environment.update_run_log(f"Omniscape block_size: {block_size}")
+
+# Get available cores for parallelization
+available_cores = 1
+if not multiprocessing.empty and 'MaximumJobs' in multiprocessing.columns:
+    if not pd.isna(multiprocessing.MaximumJobs.item()):
+        available_cores = int(multiprocessing.MaximumJobs.item())
+ps.environment.update_run_log(f"Available cores (MaximumJobs): {available_cores}")
+
+# Get parallelization intensity
+# Map intensity ID to name (0:Auto, 1:Conservative, 2:Balanced, 3:Aggressive)
+intensity_map = {
+    0: "Auto",
+    1: "Conservative",
+    2: "Balanced",
+    3: "Aggressive"
+}
+intensity = "Auto"  # default
+if not tilingOptions.empty and 'ParallelizationIntensity' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.ParallelizationIntensity.item()):
+        intensity_value = tilingOptions.ParallelizationIntensity.item()
+        # Handle both old string values and new integer IDs (backward compatibility)
+        if isinstance(intensity_value, str):
+            # Old format: string value
+            intensity_value = intensity_value.strip()
+            if intensity_value in ["Auto", "Conservative", "Balanced", "Aggressive"]:
+                intensity = intensity_value
+            else:
+                ps.environment.update_run_log(f"WARNING: Invalid intensity '{intensity_value}'. Using 'Auto'.")
+        else:
+            # New format: integer ID
+            intensity_id = int(intensity_value)
+            intensity = intensity_map.get(intensity_id, "Auto")
+ps.environment.update_run_log(f"Parallelization intensity: {intensity}")
+
+# Get buffer multiplier
+buffer_multiplier = 1.0  # default
+if not tilingOptions.empty and 'BufferMultiplier' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.BufferMultiplier.item()):
+        buffer_multiplier = float(tilingOptions.BufferMultiplier.item())
+
+buffer_pixels = int(radius * buffer_multiplier)
+
+ps.environment.update_run_log(
+    f"Buffer configuration: {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius of {radius})"
+)
+
+# Get RAM per thread estimate (for memory calculations)
+ram_per_thread_gb = 16  # default
+if not tilingOptions.empty and 'RamPerThreadGB' in tilingOptions.columns:
+    if not pd.isna(tilingOptions.RamPerThreadGB.item()):
+        ram_per_thread_gb = int(tilingOptions.RamPerThreadGB.item())
+ps.environment.update_run_log(f"RAM per thread estimate: {ram_per_thread_gb} GB")
+
+# Validate buffer vs radius
+if buffer_multiplier < 1.0:
+    ps.environment.update_run_log(
+        f"WARNING: Buffer multiplier ({buffer_multiplier:.1f}) < 1.0. "
+        f"This may cause edge effects at tile boundaries. "
+        f"Recommend setting to 1.0 or higher."
+    )
+
+ps.environment.update_run_log(f"Buffer strategy: real overlapping data only (no padding beyond raster boundary)")
 
 ps.environment.progress_bar(message="Analyzing raster dimensions", report_type="message")
 
@@ -269,63 +339,120 @@ with rasterio.open(resistancePath) as src:
 
 ps.environment.update_run_log(f"Raster dimensions: {width} x {height} = {total_pixels:,} pixels ({valid_pixels:,} valid)")
 
-# Determine tile count
-MIN_PIXELS_FOR_TILING = 10000  # Don't tile small rasters
+# ============================================================================
+# INTELLIGENT TILE COUNT CALCULATION
+# Based on Omniscape parameters (block_size, radius) and system resources
+# ============================================================================
+
+ps.environment.update_run_log("Calculating optimal tile configuration based on analysis parameters...")
+
+# Minimum tile dimensions based on block_size
+# Tiles should be at least 7x block_size in each dimension for efficient processing
+MIN_TILE_DIMENSION_MULTIPLIER = 7
+min_tile_dimension = max(block_size * MIN_TILE_DIMENSION_MULTIPLIER, 100)  # At least 100 pixels
+min_tile_pixels = min_tile_dimension ** 2
+
+# Also need to account for buffer - effective tile size after buffering
+# Effective dimension = tile_dimension - (2 * buffer_pixels)
+# Want: effective_dimension >= min_tile_dimension
+# So: tile_dimension >= min_tile_dimension + (2 * buffer_pixels)
+min_tile_dimension_with_buffer = min_tile_dimension + (2 * buffer_pixels)
+min_tile_pixels_with_buffer = min_tile_dimension_with_buffer ** 2
+
+# Don't tile if raster is too small
+MIN_PIXELS_FOR_TILING = min_tile_pixels_with_buffer * 2  # Need at least 2 tiles to be worthwhile
 
 if valid_pixels < MIN_PIXELS_FOR_TILING:
     ps.environment.update_run_log(
         f"Raster too small for multiprocessing ({valid_pixels:,} pixels < {MIN_PIXELS_FOR_TILING:,}). "
-        "Skipping tile generation. Omniscape will run in single-process mode.",
-        report_type="message"
+        f"Minimum tile size based on block_size={block_size} and buffer={buffer_pixels} "
+        f"requires {min_tile_pixels_with_buffer:,} pixels per tile. "
+        "Skipping tile generation. Omniscape will run in single-process mode."
     )
-    sys.exit(0)  # Exit gracefully without creating grid
+    sys.exit(0)
 
-# Check if user specified manual tile count
-manual_tile_count = None
-if not tilingOptions.empty and 'TileCount' in tilingOptions.columns:
-    if not pd.isna(tilingOptions.TileCount.item()):
-        manual_tile_count = int(tilingOptions.TileCount.item())
-        if manual_tile_count < 1:
-            sys.exit("TileCount must be at least 1")
-        elif manual_tile_count == 1:
-            ps.environment.update_run_log("TileCount=1 specified. Disabling multiprocessing. Omniscape will run in single-process mode.", report_type="message")
-            sys.exit(0)
+# Calculate optimal tile count based on multiple constraints
 
-# Auto-calculate optimal tile count
-if manual_tile_count is None:
-    # Target: Keep tiles around 100K to 1M pixels each
-    TARGET_TILE_SIZE = 100000  # 100K pixels per tile
+# 1. Maximum tiles based on minimum tile size constraint
+max_tile_count_size = int(valid_pixels // min_tile_pixels_with_buffer)
 
-    # Calculate required tiles
-    num_tiles_needed = max(2, math.ceil(valid_pixels / TARGET_TILE_SIZE))
+# 2. Calculate target tiles based on intensity setting
+intensity_multipliers = {
+    "Conservative": 1.0,  # Match available cores
+    "Balanced": 2.0,      # 2× cores for load balancing
+    "Aggressive": 4.0,    # 4× cores for maximum parallelization
+    "Auto": 2.0           # Smart default (same as Balanced)
+}
 
-    # Cap at 100 tiles maximum
-    desired_tile_count = min(num_tiles_needed, 100)
+multiplier = intensity_multipliers.get(intensity, 2.0)
+target_tile_count_cores = int(available_cores * multiplier)
 
-    ps.environment.update_run_log(f"Calculated desired tile count: {desired_tile_count}")
-else:
-    desired_tile_count = manual_tile_count
-    ps.environment.update_run_log(f"User-specified tile count: {desired_tile_count}")
+# 3. Also consider a reasonable target tile size for efficiency
+# Aim for tiles that are at least 2x minimum size, or 250K pixels
+TARGET_TILE_SIZE = max(min_tile_pixels_with_buffer * 2, 250000)
+target_tile_count_size = max(2, math.ceil(valid_pixels / TARGET_TILE_SIZE))
+
+# Choose the most conservative (smallest) tile count from all constraints
+# This ensures tiles are large enough and we don't over-parallelize
+desired_tile_count = min(
+    max_tile_count_size,      # Size constraint
+    target_tile_count_cores,  # Intensity/cores constraint
+    target_tile_count_size,   # Efficiency constraint
+    100                        # Absolute maximum cap
+)
+desired_tile_count = max(2, desired_tile_count)  # At least 2 tiles
+
+# Log the decision process
+ps.environment.update_run_log("Tile count calculation constraints:")
+ps.environment.update_run_log(f"  - Minimum tile dimension: {min_tile_dimension} px (7× block_size={block_size})")
+ps.environment.update_run_log(f"  - Buffer requirement: {buffer_pixels} px on each side")
+ps.environment.update_run_log(f"  - Minimum tile dimension with buffer: {min_tile_dimension_with_buffer} px")
+ps.environment.update_run_log(f"  - Minimum tile area: {min_tile_pixels_with_buffer:,} pixels")
+ps.environment.update_run_log(f"  - Maximum tiles (size constraint): {max_tile_count_size}")
+ps.environment.update_run_log(f"  - Target tiles ({intensity} intensity, {available_cores} cores × {multiplier:.1f}): {target_tile_count_cores}")
+ps.environment.update_run_log(f"  - Target tiles (based on efficiency): {target_tile_count_size}")
+ps.environment.update_run_log(f"  - Final calculated tile count: {desired_tile_count}")
 
 # Calculate optimal grid based on raster aspect ratio
 tile_dim_rows, tile_dim_cols, tile_count, grid_desc = calculate_optimal_grid(
     width, height, desired_tile_count
 )
 
-# Log adjustment if needed
+# Log adjustment if needed (grid optimization may change tile count slightly)
 if tile_count != desired_tile_count:
     ps.environment.update_run_log(
         f"Adjusted tile count from {desired_tile_count} to {tile_count} ({grid_desc}) "
-        f"for even tile distribution"
+        f"for optimal aspect ratio and even distribution"
     )
 else:
     ps.environment.update_run_log(f"Using {tile_count} tiles ({grid_desc})")
 
-ps.environment.progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
-
-# Calculate tile dimensions in pixels
+# Calculate actual tile dimensions for validation
 tile_height = int(math.ceil(height / tile_dim_rows))
 tile_width = int(math.ceil(width / tile_dim_cols))
+actual_tile_pixels = tile_height * tile_width
+
+# Validate tile size meets minimum requirements
+effective_tile_height = tile_height - (2 * buffer_pixels)
+effective_tile_width = tile_width - (2 * buffer_pixels)
+effective_tile_pixels = effective_tile_height * effective_tile_width
+
+ps.environment.update_run_log(
+    f"Tile dimensions: {tile_width} × {tile_height} pixels ({actual_tile_pixels:,} total)"
+)
+ps.environment.update_run_log(
+    f"Effective tile dimensions after buffering: {effective_tile_width} × {effective_tile_height} pixels "
+    f"({effective_tile_pixels:,} total)"
+)
+
+# Warn if tiles might be too small
+if effective_tile_pixels < min_tile_pixels:
+    ps.environment.update_run_log(
+        f"WARNING: Effective tile size ({effective_tile_pixels:,}) is smaller than recommended minimum "
+        f"({min_tile_pixels:,}) for block_size={block_size}. Consider reducing buffer or tile count."
+    )
+
+ps.environment.progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
 
 # Create grid array initialized to -9999 (NoData)
 grid = np.full((height, width), -9999, dtype=np.int32)
@@ -517,9 +644,91 @@ with open(manifest_path, 'w') as f:
     json.dump(manifest, f, indent=2)
 
 ps.environment.update_run_log(f"Tile manifest saved: {manifest_path}")
-ps.environment.update_run_log(f"Created {tile_count} pre-processed tiles")
-if buffer_pixels > 0:
-    ps.environment.update_run_log(f"  Each tile buffered by {buffer_pixels} pixels")
+
+# ============================================================================
+# TILING CONFIGURATION SUMMARY
+# ============================================================================
+
+ps.environment.update_run_log(" ")
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log("TILING CONFIGURATION SUMMARY")
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log(f"Raster: {width} × {height} pixels ({valid_pixels:,} valid)")
+ps.environment.update_run_log(" ")
+ps.environment.update_run_log("Tile Configuration:")
+ps.environment.update_run_log(f"  Grid layout:           {grid_desc} = {tile_count} tiles")
+ps.environment.update_run_log(f"  Tile dimensions:       {tile_width} × {tile_height} pixels")
+ps.environment.update_run_log(f"  Buffer applied:        {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius)")
+ps.environment.update_run_log(f"  Effective tile size:   {effective_tile_width} × {effective_tile_height} pixels")
+ps.environment.update_run_log(" ")
+ps.environment.update_run_log("Parallelization:")
+ps.environment.update_run_log(f"  Available cores:       {available_cores}")
+ps.environment.update_run_log(f"  Intensity setting:     {intensity}")
+ps.environment.update_run_log(f"  Simultaneous tiles:    {min(tile_count, available_cores)}")
+
+# Calculate estimated speedup
+# Account for overhead and diminishing returns
+tiles_per_batch = math.ceil(tile_count / available_cores)
+ideal_speedup = available_cores
+overhead_factor = 0.85  # 15% overhead for I/O, merging, etc.
+actual_speedup = min(tile_count, ideal_speedup) * overhead_factor
+
+ps.environment.update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
+ps.environment.update_run_log(" ")
+
+# Memory estimates with Julia threading consideration
+try:
+    import psutil
+    ramGB = psutil.virtual_memory().total / (1024**3)
+    available_ram_mb = ramGB * 1024
+    ram_available = True
+except ImportError:
+    ps.environment.update_run_log("WARNING: psutil not available, cannot check system RAM")
+    ramGB = 0
+    available_ram_mb = 0
+    ram_available = False
+
+# Estimate RAM per tile based on Julia threading
+# In multiprocessing mode, each tile will use julia_workers_per_tile threads
+# We need to calculate this based on the intensity setting
+intensity_multipliers = {
+    "Auto": 2.0,
+    "Conservative": 1.0,
+    "Balanced": 2.0,
+    "Aggressive": 4.0
+}
+multiplier = intensity_multipliers.get(intensity, 2.0)
+target_tile_count_cores = int(available_cores * multiplier)
+# Estimate julia workers per tile (same calculation as omniscapeTransformer)
+estimated_julia_workers_per_tile = max(1, available_cores // min(tile_count, target_tile_count_cores))
+
+# RAM estimate: threads × RAM per thread
+estimated_ram_per_tile_mb = estimated_julia_workers_per_tile * ram_per_thread_gb * 1024
+
+# Peak RAM depends on how many tiles run simultaneously
+simultaneous_tiles = min(tile_count, available_cores)
+estimated_peak_ram_mb = estimated_ram_per_tile_mb * simultaneous_tiles
+
+ps.environment.update_run_log("Memory Estimates:")
+if ram_available:
+    ps.environment.update_run_log(f"  Available RAM:         {ramGB:.1f} GB ({available_ram_mb:.0f} MB)")
+ps.environment.update_run_log(f"  Per tile (estimated):  ~{estimated_ram_per_tile_mb:.0f} MB ({estimated_julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread)")
+ps.environment.update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({simultaneous_tiles} tiles simultaneously)")
+
+# Warning if estimated usage exceeds available RAM
+if ram_available and estimated_peak_ram_mb > available_ram_mb:
+    ps.environment.update_run_log(" ")
+    ps.environment.update_run_log("WARNING: Estimated memory usage exceeds available RAM!")
+    ps.environment.update_run_log(f"  Estimated peak: {estimated_peak_ram_mb:.0f} MB")
+    ps.environment.update_run_log(f"  Available RAM:  {available_ram_mb:.0f} MB")
+    ps.environment.update_run_log(f"  Recommendations:")
+    ps.environment.update_run_log(f"    - Use 'Conservative' parallelization intensity")
+    recommended_cores = max(1, int(available_ram_mb / estimated_ram_per_tile_mb))
+    ps.environment.update_run_log(f"    - Reduce MaximumJobs to {recommended_cores} or lower")
+    ps.environment.update_run_log(f"    - Reduce RamPerThreadGB if estimate is too conservative")
+
+ps.environment.update_run_log("=" * 70)
+ps.environment.update_run_log(" ")
 
 ps.environment.progress_bar(message="PrepMultiprocessing complete", report_type="message")
 ps.environment.update_run_log("PrepMultiprocessing => Complete")
