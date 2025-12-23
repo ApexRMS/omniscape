@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<update comment="Update to omniscape 2.5 that migrates Julia configuration">
+
+    <!-- Migrate Julia configuration from omniscape_juliaConfiguration to core_JlConfig -->
+    <action code="CopyTable" fromTableName="omniscape_juliaConfiguration" toTableName="core_JlConfig">
+        <column from="juliaPath" to="ExePath" />
+    </action>
+
+    <!-- Delete the old package-specific Julia configuration table -->
+    <action code="DeleteTable" tableName="omniscape_juliaConfiguration">
+    </action>
+
+</update>

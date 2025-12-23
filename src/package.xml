@@ -1,10 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.3.0" minSyncroSimVersion="3.1.0">
-            
-      <dataSheet name="juliaConfiguration" displayName="Julia Configuration" dataScope="Library" isSingleRow="True">
-          <column name="juliaPath" displayName="Julia executable" dataType="String" isExternalFile="True" allowDbNull="False" externalFileAbsolute="True" />
-      </dataSheet>
-      
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.6.0" minSyncroSimVersion="3.1.0">
+
       <dataSheet name="movementTypes" displayName="Connectivity Categories" dataScope="Project" displayMember="Name">
           <column name="Name" dataType="String" />
           <column name="classID" displayName="Category ID" dataType="Integer" validationType="WholeNumber" validationCondition="None" />
@@ -45,6 +41,12 @@
           <column name="writeRawCurrmap" displayName="Write raw cumulative current map" dataType="Boolean" isOptional="True" defaultValue="-1" />
           <column name="maskNodata" displayName="Mask nodata" dataType="Boolean" isOptional="True" defaultValue="-1" />
           <column name="writeAsTif" displayName="Write as tif" dataType="Boolean" isOptional="True" defaultValue="0" />
+      </dataSheet>
+
+      <dataSheet name="TilingOptions" displayName="Tiling Options" isSingleRow="True">
+          <column name="ParallelizationIntensity" displayName="Parallelization Intensity" dataType="Integer" validationType="List" formula1="0:Auto|1:Conservative|2:Balanced|3:Aggressive" isOptional="True" defaultValue="0" description="Controls tile count for multiprocessing. Auto: Smart calculation (2× cores). Conservative: Matches core count (fewer, larger tiles). Balanced: 2× cores for load balancing. Aggressive: 4× cores for maximum parallelization." />
+          <column name="BufferMultiplier" displayName="Buffer Multiplier" dataType="Double" validationType="Decimal" validationCondition="GreaterEqual" formula1="0.5" isOptional="True" defaultValue="1.0" description="Buffer size as multiple of radius. Default 1.0 means buffer equals radius. Larger values (1.5-2.0) reduce edge effects but increase memory. Smaller values (0.5) reduce memory but may cause edge artifacts." />
+          <column name="RamPerThreadGB" displayName="RAM per Thread (GB)" dataType="Integer" validationType="WholeNumber" validationCondition="GreaterEqual" formula1="1" isOptional="True" defaultValue="16" description="Estimated RAM (GB) required per Julia thread. Used to calculate memory limits and display estimates. Increase for large rasters, decrease for small rasters. Default: 16 GB." />
       </dataSheet>
 
       <dataSheet name="ConditionalOptions" displayName="Options" isSingleRow="True">
@@ -95,18 +97,35 @@
           <column name="percentCover" displayName="Percent cover" dataType="Double" validationType="Decimal" validationCondition="None" />
       </dataSheet>
 
-    <transformer 
-      name="omniscapeTransformer" 
-      displayName="1 - Omniscape" 
-      transformerSpecificOutput="False" 
-      isRunnable="True" 
-      programName="python" 
-      programArguments="omniscapeTransformer.py" 
-      condaEnv="omniscapeEnvironmentv2.yml"
-      condaEnvVersion="3">
+    <transformer
+      name="prepMultiprocessingTransformer"
+      displayName="0 - Prepare Spatial Tiling"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="prepMultiprocessingTransformer.py"
+      condaEnv="omniscapeEnvironment.yml"
+      condaEnvVersion="3.5"
+      isMultiprocessing="False">
+        <dataSheet name="Required" type="Input" />
+        <dataSheet name="TilingOptions" type="Input" />
+        <dataSheet name="core_SpatialMultiprocessing" type="Output" />
+    </transformer>
+
+    <transformer
+      name="omniscapeTransformer"
+      displayName="1 - Omniscape"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="omniscapeTransformer.py"
+      condaEnv="omniscapeEnvironment.yml"
+      condaEnvVersion="3.5">
         <dataSheet name="ResistanceOptions" type="Input" />
         <dataSheet name="Required" type="Input" />
-        <dataSheet name="outputSpatial" type="Output" />
+        <dataSheet name="TilingOptions" type="Input" />
+        <dataSheet name="outputSpatial" type="Output" spatialMultiProcessing="True" />
+        <dataSheet name="core_SpatialMultiprocessing" type="Input"/>
         <dataSheet name="OutputOptions" type="Input" />
         <dataSheet name="GeneralOptions" type="Input" />
         <dataSheet name="FutureConditions" type="Input" />
@@ -116,24 +135,20 @@
         <dataSheet name="ReclassTable" type="Input" />
     </transformer>
 
-    <transformer 
-      name="movementCategoriesTransformer" 
-      displayName="2 - Categorize Connectivity Output" 
-      transformerSpecificOutput="False" 
-      isRunnable="True" 
-      programName="python" 
-      programArguments="movementCategoriesTransformer.py" 
-      condaEnv="omniscapeEnvironmentv2.yml"
-      condaEnvVersion="3">
+    <transformer
+      name="movementCategoriesTransformer"
+      displayName="2 - Categorize Connectivity Output"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="movementCategoriesTransformer.py"
+      condaEnv="omniscapeEnvironment.yml"
+      condaEnvVersion="3.5">
         <dataSheet name="reclassificationThresholds" type="Input" />
         <dataSheet name="outputTabularReclassification" type="Output" />
         <dataSheet name="outputSpatialMovement" type="Output" />
         <dataSheet name="outputSpatial" type="Input" />
     </transformer>
-
-    <layout type="Library">
-      <item name="juliaConfiguration" />
-    </layout>
 
     <layout type="Project">
       <item name="movementTypes" />
@@ -143,6 +158,7 @@
       <item name="Required" />
       <group name="Optional" displayName="Optional">
         <item name="GeneralOptions" />
+        <item name="TilingOptions" />
         <group name="Resistance0Reclassification" displayName="Resistance Reclassification">
           <item name="ResistanceOptions" />
           <item name="ReclassTable" />
