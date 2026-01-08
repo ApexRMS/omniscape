@@ -11,6 +11,9 @@ import time
 import rasterio
 from rasterio import Affine
 import numpy as np
+import subprocess
+import signal
+import atexit
 
 # Import helper functions
 from helperFunctions import (
@@ -20,6 +23,51 @@ from helperFunctions import (
     extend_tile_to_full_extent,
     merge_tile_outputs
 )
+
+# Global variable to track Julia process for cleanup
+julia_process = None
+
+def cleanup_julia_process():
+    """Kill Julia process and all its children when script exits or is cancelled"""
+    global julia_process
+    if julia_process is not None:
+        try:
+            # On Windows, kill the entire process tree including child processes
+            if os.name == 'nt':  # Windows
+                import psutil
+                try:
+                    parent = psutil.Process(julia_process.pid)
+                    children = parent.children(recursive=True)
+
+                    # Kill children first
+                    for child in children:
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+
+                    # Then kill parent
+                    try:
+                        parent.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+
+                except psutil.NoSuchProcess:
+                    pass  # Process already terminated
+            else:  # Unix-like systems
+                import signal
+                try:
+                    os.killpg(os.getpgid(julia_process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass  # Process already terminated
+        except Exception as e:
+            # Best effort cleanup - don't crash if cleanup fails
+            pass
+
+# Register cleanup function to run on exit or cancellation
+atexit.register(cleanup_julia_process)
+if os.name != 'nt':  # Unix-like systems support signal handlers
+    signal.signal(signal.SIGTERM, lambda signum, frame: (cleanup_julia_process(), sys.exit(0)))
 
 
 ps.environment.progress_bar(message="Setting up Scenario", report_type="message")
@@ -609,7 +657,27 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
 
     start_time = time.time()
-    exit_code = os.system(runOmniscape)
+
+    # Use subprocess.Popen instead of os.system for proper process management
+    # This allows us to kill Julia and all its child processes if the job is cancelled
+    global julia_process
+    julia_process = subprocess.Popen(
+        runOmniscape,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1
+    )
+
+    # Stream output to SyncroSim log in real-time
+    for line in julia_process.stdout:
+        ps.environment.update_run_log(line.rstrip())
+
+    # Wait for process to complete and get exit code
+    exit_code = julia_process.wait()
+    julia_process = None  # Clear the global reference after completion
+
     elapsed_time = time.time() - start_time
 
     ps.environment.update_run_log(f">>> Completed with exit code: {exit_code} (took {elapsed_time:.1f}s) <<<")
