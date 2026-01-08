@@ -496,6 +496,22 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "allow_different_projections = " + generalOptions.allowDifferentProjections.item() + "\n"
         "connect_four_neighbors_only = " + generalOptions.connectFourNeighborsOnly.item() + "\n"
         "solver = " + generalOptions.solver.item() + "\n"
+    )
+
+    # Add parallelization parameters to General Options section
+    if julia_workers_per_tile > 1:
+        config_file.write(
+            "parallelize = true" + "\n"
+            f"parallel_batch_size = {julia_workers_per_tile}" + "\n"
+        )
+        ps.environment.update_run_log(f"Omniscape parallelization: enabled with {julia_workers_per_tile} workers")
+    else:
+        config_file.write(
+            "parallelize = false" + "\n"
+        )
+        ps.environment.update_run_log("Omniscape parallelization: disabled (single-threaded)")
+
+    config_file.write(
         "\n"
         "[Resistance Reclassification]" + "\n"
         "reclassify_resistance = " + resistanceOptions.reclassifyResistance.item() + "\n"
@@ -523,31 +539,12 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "write_as_tif = " + outputOptions.writeAsTif.item() + "\n"
         "\n"
     )
-
-    # Option B: Control parallelization via Omniscape.jl's config.ini
-    # This ensures Omniscape actually uses the available threads
-    if julia_workers_per_tile > 1:
-        config_file.write(
-            "[Multiprocessing]" + "\n"
-            "parallelize = true" + "\n"
-            f"parallel_batch_size = {julia_workers_per_tile}" + "\n"
-            "\n"
-        )
-        ps.environment.update_run_log(f"Omniscape parallelization: enabled with {julia_workers_per_tile} workers")
-    else:
-        config_file.write(
-            "[Multiprocessing]" + "\n"
-            "parallelize = false" + "\n"
-            "parallel_batch_size = 1" + "\n"
-            "\n"
-        )
-        ps.environment.update_run_log("Omniscape parallelization: disabled (single-threaded)")
     config_file.close()
 
     # Debug: Log config.ini location for manual inspection
     config_path = os.path.join(dataPath, "omniscape_Required", "config.ini")
     ps.environment.update_run_log(f"[DEBUG] Config file written to: {config_path}")
-    ps.environment.update_run_log("[DEBUG] You can inspect the [Multiprocessing] section to verify settings")
+    ps.environment.update_run_log("[DEBUG] You can inspect the [General Options] section to verify parallelization settings")
 
     # ========================================================================
     # GENERATE JULIA SCRIPT
@@ -564,21 +561,12 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "println(\"[JULIA DEBUG] Julia started with \", Threads.nthreads(), \" threads\")" + "\n"
         "println(\"[JULIA DEBUG] JULIA_NUM_THREADS env var: \", get(ENV, \"JULIA_NUM_THREADS\", \"not set\"))" + "\n"
         "\n"
-        "# Display config.ini Multiprocessing section by reading the file" + "\n"
-        "println(\"[JULIA DEBUG] Reading config.ini [Multiprocessing] section:\")" + "\n"
+        "# Display parallelization settings from config.ini" + "\n"
+        "println(\"[JULIA DEBUG] Reading config.ini parallelization settings:\")" + "\n"
         "config_lines = readlines(\"config.ini\")" + "\n"
-        "in_multiprocessing = false" + "\n"
         "for line in config_lines" + "\n"
-        "    global in_multiprocessing" + "\n"
-        "    if occursin(\"[Multiprocessing]\", line)" + "\n"
-        "        in_multiprocessing = true" + "\n"
-        "        println(\"[JULIA DEBUG]   \", line)" + "\n"
-        "    elseif in_multiprocessing" + "\n"
-        "        if startswith(strip(line), \"[\")" + "\n"
-        "            break  # End of section" + "\n"
-        "        elseif !isempty(strip(line))" + "\n"
-        "            println(\"[JULIA DEBUG]   \", line)" + "\n"
-        "        end" + "\n"
+        "    if occursin(\"parallelize\", line) || occursin(\"parallel_batch_size\", line)" + "\n"
+        "        println(\"[JULIA DEBUG]   \", strip(line))" + "\n"
         "    end" + "\n"
         "end" + "\n"
         "\n"
