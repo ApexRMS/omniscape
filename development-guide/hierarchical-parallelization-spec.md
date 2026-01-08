@@ -3,12 +3,14 @@
 ## Overview
 
 This document specifies the implementation of hierarchical parallelization in the omniscape package, which combines:
+
 1. **Tile-level parallelization**: Multiple tile jobs running simultaneously (via SyncroSim multiprocessing)
 2. **Julia-level parallelization**: Julia threading within each tile job (via Omniscape.jl)
 
 ## Current Behavior (Before Implementation)
 
 ### Non-Tiling Mode
+
 - Single job processes the full extent
 - Julia parallelization enabled via:
   - Command line: `-t N` flag
@@ -16,37 +18,46 @@ This document specifies the implementation of hierarchical parallelization in th
 - Worker count: `N = MaximumJobs` from `core_Multiprocessing` datasheet
 
 ### Tiling Mode
+
 - Multiple tile jobs run (either sequentially or via SyncroSim multiprocessing)
 - Julia parallelization **DISABLED** (lines 414-426, 452-453 in omniscapeTransformer.py)
 - Rationale: Avoid over-subscription when multiple tile jobs run simultaneously
 
 ## Problem Statement
 
-When tiling is enabled, we completely disable Julia parallelization to avoid over-subscription. However, this leaves performance on the table in two scenarios:
+The original implementation completely disabled Julia parallelization when tiling was enabled to avoid over-subscription. However, this was based on a misunderstanding of how SyncroSim's multiprocessing works.
 
-1. **Uneven division**: If user specifies `MaximumJobs = 8` and there are 3 tiles, we only use 3 cores
-2. **Small tiles**: Tiles might be small enough that Julia parallelism within each tile would improve performance
+**Key Insight**: SyncroSim's MaximumJobs controls **job-level** (OS process-level) parallelism, NOT thread-level parallelism within each job. When tiling with multiprocessing:
+- SyncroSim spawns separate Job-X.ssim processes (one per tile)
+- SyncroSim manages how many Job-X.ssim processes run concurrently
+- Each Job-X.ssim should use ALL available Julia threads (MaximumJobs)
+- SyncroSim prevents over-subscription by limiting concurrent Job-X.ssim processes
 
-## Proposed Solution: Intelligent Worker Distribution
+## Proposed Solution: Enable Julia Parallelization in All Modes
 
 ### Core Formula
 
-```
-julia_workers_per_tile = floor(MaximumJobs / num_tiles)
-actual_total_workers = num_tiles × julia_workers_per_tile
-```
+**IMPORTANT**: In SyncroSim multiprocessing mode, each Job-X.ssim process handles ONE tile. SyncroSim's MaximumJobs setting controls how many Job-X.ssim processes run concurrently at the OS level. Therefore:
+
+- **Loop mode** (sequential tiles): `julia_workers_per_tile = MaximumJobs` (each tile runs alone, uses all workers)
+- **Multiprocessing mode** (parallel tiles via SyncroSim): `julia_workers_per_tile = MaximumJobs` (each Job-X.ssim uses all workers, SyncroSim handles job-level parallelism)
 
 ### Example Scenarios
 
-| MaximumJobs | Tiles | Julia Workers/Tile | Total Workers Used | Efficiency |
-|-------------|-------|--------------------|--------------------|------------|
-| 8           | 4     | 2                  | 8                  | 100%       |
-| 8           | 3     | 2                  | 6                  | 75%        |
-| 8           | 2     | 4                  | 8                  | 100%       |
-| 8           | 1     | 8                  | 8                  | 100%       |
-| 4           | 8     | 1 (min)            | 8                  | 200%*      |
+**Loop Mode** (tiles run sequentially in single transformer):
+| MaximumJobs | Tiles | Julia Workers/Tile | Execution |
+| ----------- | ----- | ------------------ | --------- |
+| 8           | 4     | 8                  | Tile 1 (8 threads) → Tile 2 (8 threads) → ... |
+| 4           | 8     | 4                  | Tile 1 (4 threads) → Tile 2 (4 threads) → ... |
 
-\* Over-subscription case - see Safety Checks below
+**Multiprocessing Mode** (SyncroSim spawns separate Job-X.ssim per tile):
+| MaximumJobs | Tiles | Julia Workers/Job | SyncroSim Behavior |
+| ----------- | ----- | ----------------- | ------------------ |
+| 8           | 4     | 8                 | Runs up to 8 jobs concurrently (all 4 tiles run simultaneously if resources allow) |
+| 4           | 8     | 4                 | Runs 4 jobs concurrently, 2 batches of 4 tiles each |
+| 2           | 4     | 2                 | Runs 2 jobs concurrently, 2 batches of 2 tiles each |
+
+**Key Insight**: SyncroSim's multiprocessing controls job-level (process-level) parallelism. Each job should use MaximumJobs Julia threads, and SyncroSim will limit how many jobs run simultaneously based on available resources and MaximumJobs setting.
 
 ## Julia Parallelization: Avoiding Double-Counting
 
@@ -55,6 +66,7 @@ actual_total_workers = num_tiles × julia_workers_per_tile
 Omniscape.jl accepts parallelization configuration in two places:
 
 1. **Julia Runtime** (`-t N` flag):
+
    - Sets global Julia thread count
    - Controls `Threads.@threads` macros
    - Example: `julia -t 4 script.jl` → 4 threads available
@@ -67,13 +79,15 @@ Omniscape.jl accepts parallelization configuration in two places:
 ### Risk: Over-Subscription
 
 If both are set, we could get multiplicative parallelization:
+
 - `-t 4` (4 Julia threads)
 - `parallel_batch_size = 2` (Omniscape spawns 2 parallel tasks)
 - **Actual workers**: 4 × 2 = 8 threads competing for resources
 
 ### Solution: Single Point of Control
 
-**OPTION A: Use Julia `-t` flag only** (RECOMMENDED)
+**OPTION A: Use Julia `-t` flag only** (NOT RECOMMENDED - DOES NOT WORK)
+
 ```python
 # Command line
 runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
@@ -83,20 +97,20 @@ parallelize = false
 parallel_batch_size = 1
 ```
 
-**OPTION B: Use config.ini only**
-```python
-# Command line - no -t flag
-runOmniscape = f"{jlExe} {runFile}"
+**Issue**: Setting `parallelize = false` prevents Omniscape.jl from using threads, even if they're available via `-t` flag. Omniscape.jl requires `parallelize = true` in config.ini to actually distribute work across threads.
 
-# config.ini - control parallelization here
+**OPTION B: Use config.ini** (IMPLEMENTED ✓)
+
+```python
+# Command line - provide threads via -t flag
+runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
+
+# config.ini - enable Omniscape to use those threads
 parallelize = true
 parallel_batch_size = {julia_workers_per_tile}
 ```
 
-**Recommendation**: Use Option A (`-t` flag only) because:
-- More explicit control
-- Julia's thread pool is better integrated with the runtime
-- Easier to verify worker count (can log `Threads.nthreads()` in Julia)
+**Implementation**: Using Option B with both `-t` flag (ensures threads are available to Julia) and `parallelize = true` (tells Omniscape to use them). This belt-and-suspenders approach is most robust and aligns with [Omniscape.jl documentation](https://docs.circuitscape.org/Omniscape.jl/latest/usage/).
 
 ## Implementation Details
 
@@ -113,78 +127,87 @@ parallel_batch_size = {julia_workers_per_tile}
 
 julia_workers_per_tile = 1  # Default: no Julia parallelization
 
-if is_tiling and multiprocessing.EnableMultiprocessing.item() == "true":
+if multiprocessing.EnableMultiprocessing.item() == "Yes":
     total_workers = int(multiprocessing.MaximumJobs.item())
-    num_tiles = manifest['tile_count']
 
-    # Distribute workers across tiles
-    julia_workers_per_tile = max(1, total_workers // num_tiles)
+    if is_tiling:
+        num_tiles = manifest['tile_count']
 
-    # Calculate actual utilization
-    actual_workers_used = num_tiles * julia_workers_per_tile
-    efficiency = (actual_workers_used / total_workers) * 100
-
-    # Log parallelization strategy
-    ps.environment.update_run_log(
-        f"Hierarchical parallelization: {num_tiles} tiles × {julia_workers_per_tile} Julia workers/tile "
-        f"= {actual_workers_used} total workers ({efficiency:.0f}% of requested {total_workers})"
-    )
-
-    # Warning if low efficiency
-    if efficiency < 75 and total_workers > 2:
-        ps.environment.update_run_log(
-            f"WARNING: Low worker efficiency ({efficiency:.0f}%). Consider adjusting tile count "
-            f"to better divide {total_workers} workers.",
-            report_type="message"
-        )
-```
-
-#### 2. Update config.ini Generation (lines 414-426)
-
-```python
-# ALWAYS disable Omniscape.jl's internal parallelization
-# (we control parallelization via Julia's -t flag instead)
-config_file.write(
-    "[Multiprocessing]" + "\n"
-    "parallelize = false" + "\n"
-    "parallel_batch_size = 1" + "\n"
-)
-```
-
-**Note**: We now use the same config for both tiling and non-tiling modes, avoiding inconsistency.
-
-#### 3. Update Julia Execution (lines 451-458)
-
-```python
-# ========================================================================
-# CONFIGURE JULIA THREADING
-# ========================================================================
-
-runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
-
-# Determine Julia thread count based on execution mode
-if is_tiling:
-    # Tiling mode: use calculated workers per tile
-    num_threads = julia_workers_per_tile
-else:
-    # Non-tiling mode: use all available workers
-    if multiprocessing.EnableMultiprocessing.item() == "true":
-        num_threads = int(multiprocessing.MaximumJobs.item())
+        if mode == "loop":
+            # Loop mode: tiles run sequentially, each tile gets ALL workers
+            julia_workers_per_tile = total_workers
+            ps.environment.update_run_log(
+                f"Loop mode parallelization: {num_tiles} tiles (sequential) × {julia_workers_per_tile} Julia workers/tile"
+            )
+        else:
+            # Multiprocessing mode: Each Job-X.ssim handles ONE tile
+            # SyncroSim controls job-level parallelism, so each job should use all available workers
+            julia_workers_per_tile = total_workers
+            ps.environment.update_run_log(
+                f"Multiprocessing mode: This job will use {julia_workers_per_tile} Julia workers"
+            )
+            ps.environment.update_run_log(
+                f"Note: SyncroSim will spawn up to {total_workers} concurrent jobs (tiles)"
+            )
     else:
-        num_threads = 1
+        # Non-tiling mode: use all available workers
+        julia_workers_per_tile = total_workers
+        ps.environment.update_run_log(f"Non-tiling parallelization: {julia_workers_per_tile} Julia workers")
+else:
+    # Multiprocessing disabled: single-threaded
+    julia_workers_per_tile = 1
+    ps.environment.update_run_log("Multiprocessing disabled: single-threaded execution")
+```
 
-# Build command with threading
-if num_threads > 1:
-    runOmniscape = f"{jlExe} -t {num_threads} {runFile}"
-    ps.environment.update_run_log(f"Julia threading: {num_threads} threads")
+#### 2. Update config.ini Generation (lines 521-539)
+
+```python
+# Option B: Control parallelization via Omniscape.jl's config.ini
+# This ensures Omniscape actually uses the available threads
+if julia_workers_per_tile > 1:
+    config_file.write(
+        "[Multiprocessing]" + "\n"
+        "parallelize = true" + "\n"
+        f"parallel_batch_size = {julia_workers_per_tile}" + "\n"
+        "\n"
+    )
+    ps.environment.update_run_log(f"Omniscape parallelization: enabled with {julia_workers_per_tile} workers")
+else:
+    config_file.write(
+        "[Multiprocessing]" + "\n"
+        "parallelize = false" + "\n"
+        "parallel_batch_size = 1" + "\n"
+        "\n"
+    )
+    ps.environment.update_run_log("Omniscape parallelization: disabled (single-threaded)")
+```
+
+**Note**: We set `parallelize = true` when using multiple workers, which tells Omniscape.jl to actually distribute work across threads.
+
+#### 3. Update Julia Execution (lines 561-573)
+
+```python
+# ========================================================================
+# CONFIGURE JULIA COMMAND (Option B: config.ini controls parallelization)
+# ========================================================================
+
+# Build command - parallelization is controlled via config.ini
+# We still set -t flag to ensure Julia has threads available for Omniscape to use
+if julia_workers_per_tile > 1:
+    runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
 else:
     runOmniscape = f"{jlExe} {runFile}"
-    ps.environment.update_run_log(f"Julia threading: disabled (single-threaded)")
+
+ps.environment.update_run_log(f"Executing: {runOmniscape}")
+ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
 ```
+
+**Note**: We use both `-t` flag (to make threads available to Julia) and `parallelize = true` in config.ini (to tell Omniscape to use them). The config.ini setting is now the primary control mechanism.
 
 ### Variable Tracking
 
 To maintain clarity, we introduce:
+
 - `julia_workers_per_tile`: Number of Julia threads per tile job (scoped to transformer)
 - Replaces the previous `numThreads` variable with clearer intent
 
@@ -221,6 +244,7 @@ julia_workers_per_tile = max(1, total_workers // num_tiles)
 ### 3. Efficiency Threshold
 
 If efficiency < 75%, warn user that tile count doesn't divide evenly:
+
 ```
 WARNING: Low worker efficiency (66%). Consider adjusting tile count to better divide 8 workers.
 ```
@@ -228,12 +252,14 @@ WARNING: Low worker efficiency (66%). Consider adjusting tile count to better di
 ## User-Facing Behavior
 
 ### Example 1: Perfect Division
+
 - User sets `MaximumJobs = 8`
 - Tiling creates 4 tiles
 - **Result**: 4 tile jobs × 2 Julia threads = 8 workers
 - Log message: "Hierarchical parallelization: 4 tiles × 2 Julia workers/tile = 8 total workers (100% of requested 8)"
 
 ### Example 2: Uneven Division
+
 - User sets `MaximumJobs = 8`
 - Tiling creates 3 tiles
 - **Result**: 3 tile jobs × 2 Julia threads = 6 workers (2 unused)
@@ -241,6 +267,7 @@ WARNING: Low worker efficiency (66%). Consider adjusting tile count to better di
 - Warning: "Low worker efficiency (75%). Consider adjusting tile count to better divide 8 workers."
 
 ### Example 3: More Tiles Than Workers
+
 - User sets `MaximumJobs = 4`
 - Tiling creates 8 tiles
 - **Result**: 8 tile jobs × 1 Julia thread = 8 workers (sequential batches of 4)
@@ -252,21 +279,25 @@ WARNING: Low worker efficiency (66%). Consider adjusting tile count to better di
 ### Manual Testing Checklist
 
 1. **Non-tiling mode with multiprocessing**
+
    - Set `MaximumJobs = 4`, disable tiling
    - Verify Julia runs with `-t 4`
    - Check log for "Julia threading: 4 threads"
 
 2. **Tiling mode: perfect division**
+
    - Set `MaximumJobs = 8`, create 4 tiles
    - Verify each tile runs with `-t 2`
    - Check log for "4 tiles × 2 Julia workers/tile = 8 total workers (100%)"
 
 3. **Tiling mode: uneven division**
+
    - Set `MaximumJobs = 8`, create 3 tiles
    - Verify each tile runs with `-t 2`
    - Check log for efficiency warning
 
 4. **Tiling mode: more tiles than workers**
+
    - Set `MaximumJobs = 2`, create 4 tiles
    - Verify each tile runs with `-t 1` (single-threaded)
    - Check log for "4 tiles × 1 Julia workers/tile"
@@ -279,6 +310,7 @@ WARNING: Low worker efficiency (66%). Consider adjusting tile count to better di
 ### Performance Verification
 
 Compare runtime for a test dataset:
+
 - Baseline: Tiling only (8 tiles, 1 Julia worker each)
 - Hierarchical: 4 tiles × 2 Julia workers
 - Expected: Hierarchical should be 10-30% faster (depends on tile size and Julia's parallel efficiency)
@@ -286,21 +318,25 @@ Compare runtime for a test dataset:
 ## Edge Cases
 
 ### 1. Single Tile
+
 - `num_tiles = 1`, `MaximumJobs = 8`
 - Result: 1 tile × 8 Julia workers = 8 workers
 - This is equivalent to non-tiling mode (optimal)
 
 ### 2. Tile Count > MaximumJobs
+
 - `num_tiles = 16`, `MaximumJobs = 4`
 - Result: 16 tiles × 1 Julia worker = 16 total workers
 - SyncroSim schedules 4 at a time, runs 4 batches sequentially
 
 ### 3. MaximumJobs = 1
+
 - Any tile count
 - Result: Each tile runs single-threaded
 - No parallelization (as expected)
 
 ### 4. Loop Mode (Non-Multiprocessing)
+
 - Tiles processed sequentially in single job
 - Each tile can use all `MaximumJobs` workers
 - Result: `julia_workers_per_tile = MaximumJobs` (NOT divided)
@@ -319,11 +355,13 @@ else:
 ## Configuration Compatibility
 
 ### SyncroSim Datasheets
+
 - `core_Multiprocessing.EnableMultiprocessing`: Controls whether tiling jobs run in parallel
 - `core_Multiprocessing.MaximumJobs`: Total worker budget to distribute
 - `omniscape_TilingOptions.TileCount`: Number of spatial tiles (affects division)
 
 ### Backward Compatibility
+
 - Existing scenarios without tiling: **No change** (Julia threading works as before)
 - Existing scenarios with tiling: **Performance improvement** (Julia threading now enabled per tile)
 - No breaking changes to datasheets or configuration
@@ -331,16 +369,19 @@ else:
 ## Open Questions
 
 ### 1. Omniscape.jl Parallelization Model
+
 - **Question**: Does Omniscape.jl benefit from threading for small tiles (<100K pixels)?
 - **Investigation needed**: Benchmark small vs large tiles with/without Julia threading
 - **Hypothesis**: Threading overhead may exceed benefits for tiles <50K pixels
 
 ### 2. Memory Scaling
+
 - **Question**: How does Julia thread count affect memory usage?
 - **Concern**: Each Julia thread might allocate working memory
 - **Mitigation**: Monitor memory usage in testing; reduce `julia_workers_per_tile` if needed
 
 ### 3. I/O Bottlenecks
+
 - **Question**: For large tiles, is I/O the bottleneck rather than compute?
 - **Investigation**: Profile tile processing to identify bottleneck (disk I/O vs CPU)
 - **Implication**: If I/O-bound, Julia threading won't help
@@ -348,19 +389,24 @@ else:
 ## Future Enhancements
 
 ### 1. Auto-Tuning
+
 Automatically adjust tile count and Julia workers based on:
+
 - Total raster size
 - Available memory
 - CPU core count
 - Target: Maximize `num_tiles × julia_workers_per_tile` while avoiding over-subscription
 
 ### 2. Adaptive Tile Sizing
+
 - Smaller tiles on edges (less work) → more Julia workers
 - Larger tiles in center (more work) → fewer Julia workers
 - Requires tile workload estimation
 
 ### 3. User Control
+
 Add to `omniscape_TilingOptions`:
+
 - `JuliaWorkersPerTile`: Manual override (advanced users)
 - `MaxTotalWorkers`: Cap on `num_tiles × julia_workers`
 
@@ -372,6 +418,6 @@ Add to `omniscape_TilingOptions`:
 
 ## Change Log
 
-| Date | Author | Change |
-|------|--------|--------|
+| Date       | Author  | Change                         |
+| ---------- | ------- | ------------------------------ |
 | 2025-12-16 | Initial | Created specification document |
