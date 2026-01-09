@@ -660,7 +660,6 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
 
     # Use subprocess.Popen instead of os.system for proper process management
     # This allows us to kill Julia and all its child processes if the job is cancelled
-    global julia_process
     julia_process = subprocess.Popen(
         runOmniscape,
         shell=True,
@@ -672,7 +671,9 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
 
     # Stream output to SyncroSim log in real-time
     for line in julia_process.stdout:
-        ps.environment.update_run_log(line.rstrip())
+        stripped_line = line.rstrip()
+        if stripped_line:  # Only log non-empty lines
+            ps.environment.update_run_log(stripped_line)
 
     # Wait for process to complete and get exit code
     exit_code = julia_process.wait()
