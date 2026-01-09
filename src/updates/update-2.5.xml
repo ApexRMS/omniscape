@@ -2,12 +2,9 @@
 <update comment="Update to omniscape 2.5 that migrates Julia configuration">
 
     <!-- Migrate Julia configuration from omniscape_juliaConfiguration to core_JlConfig -->
-    <action code="CopyTable" fromTableName="omniscape_juliaConfiguration" toTableName="core_JlConfig">
-        <column from="juliaPath" to="ExePath" />
-    </action>
-
-    <!-- Delete the old package-specific Julia configuration table -->
-    <action code="DeleteTable" tableName="omniscape_juliaConfiguration">
+    <action code="Exec" condition="TableExists" criteria="omniscape_juliaConfiguration">
+        <item>INSERT INTO core_JlConfig (ExePath) SELECT juliaPath FROM omniscape_juliaConfiguration</item>
+        <item>DROP TABLE omniscape_juliaConfiguration</item>
     </action>
 
 </update>
