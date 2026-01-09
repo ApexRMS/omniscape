@@ -118,10 +118,6 @@ juliaConfig = myLibrary.datasheets(name = "core_JlConfig")  # Julia config is no
 # ============================================================================
 
 # Load tile manifest created by prep transformer
-ps.environment.update_run_log(f"[DEBUG] Working directory: {wrkDir}")
-ps.environment.update_run_log(f"[DEBUG] Library name: {myLibrary.name}")
-ps.environment.update_run_log(f"[DEBUG] Scenario ID: {myScenarioID}")
-
 manifest = load_tile_manifest(myScenarioID, wrkDir)
 
 if manifest is None:
@@ -133,8 +129,6 @@ if manifest is None:
 else:
     # Tiling enabled - determine execution mode
     ps.environment.update_run_log(f"Tile manifest loaded: {manifest['tile_count']} tiles, buffer={manifest['buffer_pixels']} pixels")
-    ps.environment.update_run_log(f"[DEBUG] Grid raster: {manifest['grid_raster']}")
-    ps.environment.update_run_log(f"[DEBUG] Full extent: {manifest['full_extent']['width']} x {manifest['full_extent']['height']}")
 
     is_tiling = True
     mode, assigned_tile_id, all_tile_ids = determine_execution_mode(myLibrary, manifest)
@@ -157,16 +151,10 @@ else:
         )
 
 # ============================================================================
-# CALCULATE HIERARCHICAL PARALLELIZATION (Option B: Both -t flag and config.ini)
+# CALCULATE HIERARCHICAL PARALLELIZATION
 # ============================================================================
 
 julia_workers_per_tile = 1  # Default: no Julia parallelization
-
-# Debug: Log multiprocessing settings
-ps.environment.update_run_log(f"[DEBUG] Multiprocessing.EnableMultiprocessing = {multiprocessing.EnableMultiprocessing.item()}")
-ps.environment.update_run_log(f"[DEBUG] Multiprocessing.MaximumJobs = {multiprocessing.MaximumJobs.item() if not multiprocessing.MaximumJobs.empty else 'Not set'}")
-ps.environment.update_run_log(f"[DEBUG] is_tiling = {is_tiling}")
-ps.environment.update_run_log(f"[DEBUG] mode = {mode}")
 
 if multiprocessing.EnableMultiprocessing.item() == "Yes":
     total_workers = int(multiprocessing.MaximumJobs.item())
@@ -215,11 +203,8 @@ else:
     julia_workers_per_tile = 1
     ps.environment.update_run_log("Multiprocessing disabled: single-threaded execution")
 
-# Debug: Log final julia_workers_per_tile before RAM cap
-ps.environment.update_run_log(f"[DEBUG] julia_workers_per_tile (before RAM cap) = {julia_workers_per_tile}")
-
 # ============================================================================
-# APPLY RAM-BASED CAP (Option A: Memory Management)
+# APPLY RAM-BASED CAP
 # ============================================================================
 
 # Get RAM per thread estimate from tiling options
@@ -264,9 +249,6 @@ try:
         )
 except ImportError:
     ps.environment.update_run_log("WARNING: psutil not available, skipping RAM-based thread cap")
-
-# Debug: Log final julia_workers_per_tile after RAM cap
-ps.environment.update_run_log(f"[DEBUG] julia_workers_per_tile (after RAM cap) = {julia_workers_per_tile}")
 
 # Store original resistance path for output datasheet
 original_resistance_path = requiredDataValidation.resistanceFile.item()
@@ -589,11 +571,6 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     )
     config_file.close()
 
-    # Debug: Log config.ini location for manual inspection
-    config_path = os.path.join(dataPath, "omniscape_Required", "config.ini")
-    ps.environment.update_run_log(f"[DEBUG] Config file written to: {config_path}")
-    ps.environment.update_run_log("[DEBUG] You can inspect the [General Options] section to verify parallelization settings")
-
     # ========================================================================
     # GENERATE JULIA SCRIPT
     # ========================================================================
@@ -605,30 +582,6 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "using Pkg; Pkg.add(name=\"GDAL\"); Pkg.add(name=\"Omniscape\")" + "\n"
         "using Omniscape" + "\n"
         "\n"
-        "# Verify Julia threading is available" + "\n"
-        "println(\"[JULIA DEBUG] Julia started with \", Threads.nthreads(), \" threads\")" + "\n"
-        "println(\"[JULIA DEBUG] JULIA_NUM_THREADS env var: \", get(ENV, \"JULIA_NUM_THREADS\", \"not set\"))" + "\n"
-        "\n"
-        "# Display parallelization settings from config.ini" + "\n"
-        "println(\"[JULIA DEBUG] Reading config.ini parallelization settings:\")" + "\n"
-        "config_lines = readlines(\"config.ini\")" + "\n"
-        "for line in config_lines" + "\n"
-        "    if occursin(\"parallelize\", line) || occursin(\"parallel_batch_size\", line)" + "\n"
-        "        println(\"[JULIA DEBUG]   \", strip(line))" + "\n"
-        "    end" + "\n"
-        "end" + "\n"
-        "\n"
-        "# Test Julia threading is working" + "\n"
-        "println(\"[JULIA DEBUG] Testing Julia threading with simple parallel loop...\")" + "\n"
-        "thread_ids = zeros(Int, Threads.nthreads())" + "\n"
-        "Threads.@threads for i in 1:Threads.nthreads()" + "\n"
-        "    thread_ids[i] = Threads.threadid()" + "\n"
-        "end" + "\n"
-        "println(\"[JULIA DEBUG] Thread IDs used: \", thread_ids, \" (unique: \", length(unique(thread_ids)), \")\")" + "\n"
-        "flush(stdout)" + "\n"
-        "\n"
-        "println(\"[JULIA DEBUG] Starting Omniscape.run_omniscape()...\")" + "\n"
-        "flush(stdout)" + "\n"
         "run_omniscape(\"config.ini\")"
     )
     julia_file.close()
@@ -640,12 +593,11 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
 
     # ========================================================================
-    # CONFIGURE JULIA COMMAND (Option B: config.ini controls parallelization)
+    # CONFIGURE JULIA COMMAND
     # ========================================================================
 
     # Build command - parallelization is controlled via config.ini
     # We still set -t flag to ensure Julia has threads available for Omniscape to use
-    ps.environment.update_run_log(f"[DEBUG] julia_workers_per_tile at execution time = {julia_workers_per_tile}")
     if julia_workers_per_tile > 1:
         runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
         ps.environment.update_run_log(f"Julia threading ENABLED with {julia_workers_per_tile} threads")
