@@ -599,26 +599,29 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     # Build command - parallelization is controlled via config.ini
     # We still set -t flag to ensure Julia has threads available for Omniscape to use
     if julia_workers_per_tile > 1:
-        runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
+        runOmniscape = [jlExe, "-t", str(julia_workers_per_tile), runFile]
         ps.environment.update_run_log(f"Julia threading ENABLED with {julia_workers_per_tile} threads")
     else:
-        runOmniscape = f"{jlExe} {runFile}"
+        runOmniscape = [jlExe, runFile]
         ps.environment.update_run_log(f"Julia threading DISABLED (single-threaded)")
 
-    ps.environment.update_run_log(f"Executing: {runOmniscape}")
+    ps.environment.update_run_log(f"Executing: {' '.join(runOmniscape)}")
     ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
 
     start_time = time.time()
 
     # Use subprocess.Popen instead of os.system for proper process management
     # This allows us to kill Julia and all its child processes if the job is cancelled
+    # start_new_session=True on Unix isolates the process in its own session/process group
+    # This prevents os.killpg() from accidentally killing the parent transformer process
     julia_process = subprocess.Popen(
         runOmniscape,
-        shell=True,
+        shell=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
-        bufsize=1
+        bufsize=1,
+        start_new_session=(os.name != 'nt')
     )
 
     # Stream output to SyncroSim log in real-time

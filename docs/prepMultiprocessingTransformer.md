@@ -43,7 +43,7 @@ The transformer calculates optimal tile count using multiple constraints:
 
 **Minimum tile size constraint:**
 
-```
+```python
 min_tile_dimension = 7 × block_size
 min_tile_dimension_with_buffer = min_tile_dimension + (2 × buffer_pixels)
 ```
@@ -52,7 +52,7 @@ Tiles must be large enough for efficient Omniscape processing after buffering. T
 
 **Parallelization intensity constraint:**
 
-```
+```python
 Conservative: tile_count = available_cores × 1.0
 Balanced:     tile_count = available_cores × 2.0  (default)
 Aggressive:   tile_count = available_cores × 4.0
