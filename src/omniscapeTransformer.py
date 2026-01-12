@@ -11,6 +11,9 @@ import time
 import rasterio
 from rasterio import Affine
 import numpy as np
+import subprocess
+import signal
+import atexit
 
 # Import helper functions
 from helperFunctions import (
@@ -20,6 +23,51 @@ from helperFunctions import (
     extend_tile_to_full_extent,
     merge_tile_outputs
 )
+
+# Global variable to track Julia process for cleanup
+julia_process = None
+
+def cleanup_julia_process():
+    """Kill Julia process and all its children when script exits or is cancelled"""
+    global julia_process
+    if julia_process is not None:
+        try:
+            # On Windows, kill the entire process tree including child processes
+            if os.name == 'nt':  # Windows
+                import psutil
+                try:
+                    parent = psutil.Process(julia_process.pid)
+                    children = parent.children(recursive=True)
+
+                    # Kill children first
+                    for child in children:
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+
+                    # Then kill parent
+                    try:
+                        parent.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+
+                except psutil.NoSuchProcess:
+                    pass  # Process already terminated
+            else:  # Unix-like systems
+                import signal
+                try:
+                    os.killpg(os.getpgid(julia_process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass  # Process already terminated
+        except Exception as e:
+            # Best effort cleanup - don't crash if cleanup fails
+            pass
+
+# Register cleanup function to run on exit or cancellation
+atexit.register(cleanup_julia_process)
+if os.name != 'nt':  # Unix-like systems support signal handlers
+    signal.signal(signal.SIGTERM, lambda signum, frame: (cleanup_julia_process(), sys.exit(0)))
 
 
 ps.environment.progress_bar(message="Setting up Scenario", report_type="message")
@@ -70,10 +118,6 @@ juliaConfig = myLibrary.datasheets(name = "core_JlConfig")  # Julia config is no
 # ============================================================================
 
 # Load tile manifest created by prep transformer
-ps.environment.update_run_log(f"[DEBUG] Working directory: {wrkDir}")
-ps.environment.update_run_log(f"[DEBUG] Library name: {myLibrary.name}")
-ps.environment.update_run_log(f"[DEBUG] Scenario ID: {myScenarioID}")
-
 manifest = load_tile_manifest(myScenarioID, wrkDir)
 
 if manifest is None:
@@ -85,8 +129,6 @@ if manifest is None:
 else:
     # Tiling enabled - determine execution mode
     ps.environment.update_run_log(f"Tile manifest loaded: {manifest['tile_count']} tiles, buffer={manifest['buffer_pixels']} pixels")
-    ps.environment.update_run_log(f"[DEBUG] Grid raster: {manifest['grid_raster']}")
-    ps.environment.update_run_log(f"[DEBUG] Full extent: {manifest['full_extent']['width']} x {manifest['full_extent']['height']}")
 
     is_tiling = True
     mode, assigned_tile_id, all_tile_ids = determine_execution_mode(myLibrary, manifest)
@@ -109,7 +151,7 @@ else:
         )
 
 # ============================================================================
-# CALCULATE HIERARCHICAL PARALLELIZATION (Option A: Julia -t flag only)
+# CALCULATE HIERARCHICAL PARALLELIZATION
 # ============================================================================
 
 julia_workers_per_tile = 1  # Default: no Julia parallelization
@@ -127,35 +169,29 @@ if multiprocessing.EnableMultiprocessing.item() == "Yes":
                 f"Loop mode parallelization: {num_tiles} tiles (sequential) × {julia_workers_per_tile} Julia workers/tile"
             )
         else:
-            # Multiprocessing mode: divide workers across tiles running in parallel
-            julia_workers_per_tile = max(1, total_workers // num_tiles)
-
-            # Calculate actual utilization
-            actual_workers_used = num_tiles * julia_workers_per_tile
-            efficiency = (actual_workers_used / total_workers) * 100
-
-            # Log parallelization strategy
+            # Multiprocessing mode: Each Job-X.ssim handles ONE tile
+            # SyncroSim controls job-level parallelism, so each job should use all available workers
+            julia_workers_per_tile = total_workers
             ps.environment.update_run_log(
-                f"Hierarchical parallelization: {num_tiles} tiles × {julia_workers_per_tile} Julia workers/tile "
-                f"= {actual_workers_used} total workers ({efficiency:.0f}% of requested {total_workers})"
+                f"Multiprocessing mode: This job (tile {assigned_tile_id}/{num_tiles}) will use {julia_workers_per_tile} Julia workers"
+            )
+            ps.environment.update_run_log(
+                f"Note: SyncroSim will spawn up to {total_workers} concurrent jobs (tiles) based on MaximumJobs setting"
             )
 
-            # Warning if low efficiency
-            if efficiency < 75 and total_workers > 2:
-                ps.environment.update_run_log(
-                    f"WARNING: Low worker efficiency ({efficiency:.0f}%). Consider adjusting tile count "
-                    f"to better divide {total_workers} workers."
-                )
-
-            # Check for over-subscription
+            # Check for over-subscription (if all tiles run simultaneously)
             import os
             physical_cores = os.cpu_count() or 1
-            potential_workers = num_tiles * julia_workers_per_tile
+            # In multiprocessing mode, SyncroSim may run multiple jobs concurrently
+            # Worst case: all tiles run at once
+            max_concurrent_jobs = min(num_tiles, total_workers)
+            potential_workers = max_concurrent_jobs * julia_workers_per_tile
 
             if potential_workers > physical_cores * 1.5:
                 ps.environment.update_run_log(
                     f"WARNING: Potential over-subscription detected! "
-                    f"{potential_workers} workers requested but only {physical_cores} physical cores available. "
+                    f"If {max_concurrent_jobs} tiles run simultaneously with {julia_workers_per_tile} Julia workers each, "
+                    f"that's {potential_workers} total workers but only {physical_cores} physical cores available. "
                     f"Performance may degrade due to context switching."
                 )
     else:
@@ -168,7 +204,7 @@ else:
     ps.environment.update_run_log("Multiprocessing disabled: single-threaded execution")
 
 # ============================================================================
-# APPLY RAM-BASED CAP (Option A: Memory Management)
+# APPLY RAM-BASED CAP
 # ============================================================================
 
 # Get RAM per thread estimate from tiling options
@@ -490,6 +526,22 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "allow_different_projections = " + generalOptions.allowDifferentProjections.item() + "\n"
         "connect_four_neighbors_only = " + generalOptions.connectFourNeighborsOnly.item() + "\n"
         "solver = " + generalOptions.solver.item() + "\n"
+    )
+
+    # Add parallelization parameters to General Options section
+    if julia_workers_per_tile > 1:
+        config_file.write(
+            "parallelize = true" + "\n"
+            f"parallel_batch_size = {julia_workers_per_tile}" + "\n"
+        )
+        ps.environment.update_run_log(f"Omniscape parallelization: enabled with {julia_workers_per_tile} workers")
+    else:
+        config_file.write(
+            "parallelize = false" + "\n"
+        )
+        ps.environment.update_run_log("Omniscape parallelization: disabled (single-threaded)")
+
+    config_file.write(
         "\n"
         "[Resistance Reclassification]" + "\n"
         "reclassify_resistance = " + resistanceOptions.reclassifyResistance.item() + "\n"
@@ -517,15 +569,6 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "write_as_tif = " + outputOptions.writeAsTif.item() + "\n"
         "\n"
     )
-
-    # Option A: ALWAYS disable Omniscape.jl's internal parallelization
-    # Parallelization is controlled via Julia's -t flag instead
-    config_file.write(
-        "[Multiprocessing]" + "\n"
-        "parallelize = false" + "\n"
-        "parallel_batch_size = 1" + "\n"
-        "\n"
-    )
     config_file.close()
 
     # ========================================================================
@@ -538,6 +581,7 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "\n"
         "using Pkg; Pkg.add(name=\"GDAL\"); Pkg.add(name=\"Omniscape\")" + "\n"
         "using Omniscape" + "\n"
+        "\n"
         "run_omniscape(\"config.ini\")"
     )
     julia_file.close()
@@ -549,22 +593,47 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     runFile = os.path.join(dataPath, "omniscape_Required", "runOmniscape.jl")
 
     # ========================================================================
-    # CONFIGURE JULIA THREADING (Option A: -t flag only)
+    # CONFIGURE JULIA COMMAND
     # ========================================================================
 
-    # Build command with threading based on calculated julia_workers_per_tile
+    # Build command - parallelization is controlled via config.ini
+    # We still set -t flag to ensure Julia has threads available for Omniscape to use
     if julia_workers_per_tile > 1:
-        runOmniscape = f"{jlExe} -t {julia_workers_per_tile} {runFile}"
-        ps.environment.update_run_log(f"Julia threading: {julia_workers_per_tile} threads")
+        runOmniscape = [jlExe, "-t", str(julia_workers_per_tile), runFile]
+        ps.environment.update_run_log(f"Julia threading ENABLED with {julia_workers_per_tile} threads")
     else:
-        runOmniscape = f"{jlExe} {runFile}"
-        ps.environment.update_run_log(f"Julia threading: disabled (single-threaded)")
+        runOmniscape = [jlExe, runFile]
+        ps.environment.update_run_log(f"Julia threading DISABLED (single-threaded)")
 
-    ps.environment.update_run_log(f"Executing: {runOmniscape}")
+    ps.environment.update_run_log(f"Executing: {' '.join(runOmniscape)}")
     ps.environment.update_run_log(">>> Starting Omniscape.jl <<<")
 
     start_time = time.time()
-    exit_code = os.system(runOmniscape)
+
+    # Use subprocess.Popen instead of os.system for proper process management
+    # This allows us to kill Julia and all its child processes if the job is cancelled
+    # start_new_session=True on Unix isolates the process in its own session/process group
+    # This prevents os.killpg() from accidentally killing the parent transformer process
+    julia_process = subprocess.Popen(
+        runOmniscape,
+        shell=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1,
+        start_new_session=(os.name != 'nt')
+    )
+
+    # Stream output to SyncroSim log in real-time
+    for line in julia_process.stdout:
+        stripped_line = line.rstrip()
+        if stripped_line:  # Only log non-empty lines
+            ps.environment.update_run_log(stripped_line)
+
+    # Wait for process to complete and get exit code
+    exit_code = julia_process.wait()
+    julia_process = None  # Clear the global reference after completion
+
     elapsed_time = time.time() - start_time
 
     ps.environment.update_run_log(f">>> Completed with exit code: {exit_code} (took {elapsed_time:.1f}s) <<<")

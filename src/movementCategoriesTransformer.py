@@ -18,11 +18,16 @@ e = ps.environment._environment()
 wrkDir = e.data_directory.item()
 
 myLibrary = ps.Library()
-myProject = myLibrary.projects(pid = 1) 
+myProject = myLibrary.projects(pid = 1)
 myScenarioID = e.scenario_id.item()
 myScenario = myLibrary.scenarios(myScenarioID)
-myScenarioParentID = int(myScenario.parent_id)
-myParentScenario = myLibrary.scenarios(sid = myScenarioParentID)
+
+# Handle parent scenario (may be NaN in partial libraries during tiling)
+if pd.isna(myScenario.parent_id):
+    myParentScenario = myScenario  # Use self as parent if no parent exists
+else:
+    myScenarioParentID = int(myScenario.parent_id)
+    myParentScenario = myLibrary.scenarios(sid = myScenarioParentID)
 
 dataPath = os.path.join(e.data_directory.item(), "Scenario-" + repr(myScenarioID))
 
