@@ -11,8 +11,9 @@ import os
 import sys
 import rasterio
 import numpy as np
+from helperFunctions import safe_progress_bar
 
-ps.environment.progress_bar(message = "Setting up Scenario", report_type = "message")
+safe_progress_bar(message = "Setting up Scenario", report_type = "message")
 
 e = ps.environment._environment()
 wrkDir = e.data_directory.item()
@@ -62,7 +63,7 @@ if reclassificationThresholds.empty:
 
 # Categorize connectivity output ----------------------------------------------------------------
 
-ps.environment.progress_bar(message = "Categorizing connectivity output", report_type = "message")
+safe_progress_bar(message = "Categorizing connectivity output", report_type = "message")
 
 normCurr = rasterio.open(myInput.normalizedCumCurrmap.item())
 data = normCurr.read()

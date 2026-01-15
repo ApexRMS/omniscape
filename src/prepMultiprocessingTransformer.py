@@ -12,8 +12,9 @@ import math
 import json
 import shutil
 from datetime import datetime
+from helperFunctions import safe_progress_bar
 
-ps.environment.progress_bar(message="Initializing PrepMultiprocessing", report_type="message")
+safe_progress_bar(message="Initializing PrepMultiprocessing", report_type="message")
 
 
 # ============================================================================
@@ -315,7 +316,7 @@ if buffer_multiplier < 1.0:
 
 ps.environment.update_run_log(f"Buffer strategy: real overlapping data only (no padding beyond raster boundary)")
 
-ps.environment.progress_bar(message="Analyzing raster dimensions", report_type="message")
+safe_progress_bar(message="Analyzing raster dimensions", report_type="message")
 
 # Load raster to analyze dimensions
 with rasterio.open(resistancePath) as src:
@@ -452,7 +453,7 @@ if effective_tile_pixels < min_tile_pixels:
         f"({min_tile_pixels:,}) for block_size={block_size}. Consider reducing buffer or tile count."
     )
 
-ps.environment.progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
+safe_progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
 
 # Create grid array initialized to -9999 (NoData)
 grid = np.full((height, width), -9999, dtype=np.int32)
@@ -483,7 +484,7 @@ tile_size_k = int(valid_pixels / tile_count / 1000)
 grid_filename = f"smpGrid-{tile_count}-{tile_size_k}K.tif"
 grid_path = os.path.join(dataPath, grid_filename)
 
-ps.environment.progress_bar(message="Writing tile grid raster", report_type="message")
+safe_progress_bar(message="Writing tile grid raster", report_type="message")
 
 # Write grid raster
 with rasterio.open(
@@ -515,7 +516,7 @@ myScenario.save_datasheet(name="core_SpatialMultiprocessing", data=smp_data)
 # CREATE PRE-PROCESSED TILES
 # ============================================================================
 
-ps.environment.progress_bar(message="Creating pre-processed tiles", report_type="message")
+safe_progress_bar(message="Creating pre-processed tiles", report_type="message")
 
 # Create tiles directory
 tiles_dir = os.path.join(dataPath, "OmniscapeTiles")
@@ -546,7 +547,7 @@ manifest = {
 tile_id = 1
 for row in range(tile_dim_rows):
     for col in range(tile_dim_cols):
-        ps.environment.progress_bar(
+        safe_progress_bar(
             message=f"Processing tile {tile_id}/{tile_count}",
             report_type="message"
         )
@@ -688,32 +689,30 @@ except ImportError:
     available_ram_mb = 0
     ram_available = False
 
-# Estimate RAM per tile based on Julia threading
-# In multiprocessing mode, each tile will use julia_workers_per_tile threads
-# We need to calculate this based on the intensity setting
-intensity_multipliers = {
-    "Auto": 2.0,
-    "Conservative": 1.0,
-    "Balanced": 2.0,
-    "Aggressive": 4.0
-}
-multiplier = intensity_multipliers.get(intensity, 2.0)
-target_tile_count_cores = int(available_cores * multiplier)
-# Estimate julia workers per tile (same calculation as omniscapeTransformer)
-estimated_julia_workers_per_tile = max(1, available_cores // min(tile_count, target_tile_count_cores))
+# Estimate RAM per tile based on hierarchical parallelization strategy
+# Matches omniscapeTransformer.py logic:
+# - Multiprocessing mode: Each tile gets 1-2 Julia threads (prioritizes job-level parallelism)
+# - Loop mode: Each tile gets up to 8 Julia threads (tiles run sequentially)
+max_concurrent_jobs = min(tile_count, available_cores)
+estimated_julia_workers_per_tile = max(1, min(available_cores // max_concurrent_jobs, 2))
+
+ps.environment.update_run_log("Parallelization Strategy:")
+ps.environment.update_run_log(f"  Concurrent tiles:      Up to {max_concurrent_jobs} (limited by MaximumJobs={available_cores})")
+ps.environment.update_run_log(f"  Julia threads/tile:    {estimated_julia_workers_per_tile} (hierarchical: prioritize tile parallelism)")
+ps.environment.update_run_log(f"  Total thread usage:    {max_concurrent_jobs * estimated_julia_workers_per_tile} threads")
 
 # RAM estimate: threads × RAM per thread
 estimated_ram_per_tile_mb = estimated_julia_workers_per_tile * ram_per_thread_gb * 1024
 
 # Peak RAM depends on how many tiles run simultaneously
-simultaneous_tiles = min(tile_count, available_cores)
-estimated_peak_ram_mb = estimated_ram_per_tile_mb * simultaneous_tiles
+estimated_peak_ram_mb = estimated_ram_per_tile_mb * max_concurrent_jobs
 
+ps.environment.update_run_log(" ")
 ps.environment.update_run_log("Memory Estimates:")
 if ram_available:
     ps.environment.update_run_log(f"  Available RAM:         {ramGB:.1f} GB ({available_ram_mb:.0f} MB)")
 ps.environment.update_run_log(f"  Per tile (estimated):  ~{estimated_ram_per_tile_mb:.0f} MB ({estimated_julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread)")
-ps.environment.update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({simultaneous_tiles} tiles simultaneously)")
+ps.environment.update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({max_concurrent_jobs} tiles simultaneously)")
 
 # Warning if estimated usage exceeds available RAM
 if ram_available and estimated_peak_ram_mb > available_ram_mb:
@@ -722,13 +721,13 @@ if ram_available and estimated_peak_ram_mb > available_ram_mb:
     ps.environment.update_run_log(f"  Estimated peak: {estimated_peak_ram_mb:.0f} MB")
     ps.environment.update_run_log(f"  Available RAM:  {available_ram_mb:.0f} MB")
     ps.environment.update_run_log(f"  Recommendations:")
-    ps.environment.update_run_log(f"    - Use 'Conservative' parallelization intensity")
     recommended_cores = max(1, int(available_ram_mb / estimated_ram_per_tile_mb))
     ps.environment.update_run_log(f"    - Reduce MaximumJobs to {recommended_cores} or lower")
     ps.environment.update_run_log(f"    - Reduce RamPerThreadGB if estimate is too conservative")
+    ps.environment.update_run_log(f"    - Current estimate assumes {estimated_julia_workers_per_tile} Julia threads per tile")
 
 ps.environment.update_run_log("=" * 70)
 ps.environment.update_run_log(" ")
 
-ps.environment.progress_bar(message="PrepMultiprocessing complete", report_type="message")
+safe_progress_bar(message="PrepMultiprocessing complete", report_type="message")
 ps.environment.update_run_log("PrepMultiprocessing => Complete")

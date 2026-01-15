@@ -13,6 +13,28 @@ import pysyncrosim as ps
 
 
 # ============================================================================
+# PROGRESS BAR WRAPPER (Linux Compatibility)
+# ============================================================================
+
+def safe_progress_bar(message, report_type="message"):
+    """
+    Wrapper for ps.environment.progress_bar that falls back to print() on Linux.
+
+    On Linux, progress_bar may throw RuntimeError due to SyncroSim environment issues.
+    This wrapper catches the error and prints to console instead.
+
+    Args:
+        message: Progress message string (supports f-strings)
+        report_type: Type of message (default: "message")
+    """
+    try:
+        ps.environment.progress_bar(message=message, report_type=report_type)
+    except RuntimeError:
+        # Fallback: just print to console (update_run_log also requires SyncroSim environment)
+        print(f"[Progress] {message}")
+
+
+# ============================================================================
 # TILING AND MANIFEST FUNCTIONS
 # ============================================================================
 
