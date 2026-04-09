@@ -58,15 +58,8 @@ Omniscape.jl documentation at [https://docs.circuitscape.org/Omniscape.jl/stable
 
 ## Contributors
 
-Carina Rauen Firkowski (Author, maintainer) <a href="https://orcid.org/0000-0003-0540-9529"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
-<br>
-Bronwyn Rayfield (Author) <a href="https://orcid.org/0000-0003-1768-1300"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
-<br>
-Katie Birchard (Author) <a href="https://orcid.org/0009-0003-7519-4751"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
-<br>
+ApexRMS (Author, maintainer) 
 Marie-Josée Fortin (Author) <a href="https://orcid.org/0000-0002-9935-1366"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
-<br>
-Colin Daniel (Author) <a href="https://orcid.org/0000-0001-7367-2041"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
 
 <br>
 
