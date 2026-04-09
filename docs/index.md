@@ -59,6 +59,7 @@ Omniscape.jl documentation at [https://docs.circuitscape.org/Omniscape.jl/stable
 ## Contributors
 
 ApexRMS (Author, maintainer) 
+<br>
 Marie-Josée Fortin (Author) <a href="https://orcid.org/0000-0002-9935-1366"><img align="middle" style="padding: 0.5px" width="17" src="assets/images/ORCID.png"></a>
 
 <br>
