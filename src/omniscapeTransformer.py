@@ -22,7 +22,8 @@ from helperFunctions import (
     crop_buffer_from_output,
     extend_tile_to_full_extent,
     merge_tile_outputs,
-    safe_progress_bar
+    safe_progress_bar,
+    apply_resistance_modifier
 )
 
 # Global variable to track Julia process for cleanup
@@ -568,10 +569,10 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             fname_base = f"tile-{tile_id}-mod{mod_idx}" if is_tiling else f"mod{mod_idx}"
             mod_output_path = os.path.join(modifier_dir, f"{fname_base}-resistance.tif")
 
-            focal_fn_map = {0: "mean", 1: "sum", 2: "max", 3: "min"}
             use_focal = mod_row.get('useFocalWindow') == "true"
             focal_radius = int(mod_row['focalRadius']) if use_focal and not pd.isna(mod_row.get('focalRadius')) else None
-            focal_fn = focal_fn_map.get(int(mod_row.get('focalFunction', 0)), "mean") if use_focal else "mean"
+            focal_fn_raw = mod_row.get('focalFunction')
+            focal_fn = str(focal_fn_raw).lower() if use_focal and not pd.isna(focal_fn_raw) else "mean"
 
             mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
 
