@@ -459,6 +459,12 @@ if applyModifier:
         with rasterio.open(mod_file) as mod_src:
             if mod_src.crs != resistanceLayer.crs:
                 sys.exit(f"Modifier raster '{mod_name}' must have the same CRS as 'Resistance file'.")
+            if mod_src.res != resistanceLayer.res:
+                sys.exit(f"Modifier raster '{mod_name}' resolution {mod_src.res} does not match resistance raster resolution {resistanceLayer.res}.")
+            rb = resistanceLayer.bounds
+            mb = mod_src.bounds
+            if mb.left > rb.left or mb.right < rb.right or mb.bottom > rb.bottom or mb.top < rb.top:
+                sys.exit(f"Modifier raster '{mod_name}' does not fully cover the resistance raster extent.")
         use_focal = mod_row.get('useFocalWindow') == "Yes"
         if use_focal:
             if pd.isna(mod_row.get('focalRadius')):
@@ -572,7 +578,8 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             use_focal = mod_row.get('useFocalWindow') == "true"
             focal_radius = int(mod_row['focalRadius']) if use_focal and not pd.isna(mod_row.get('focalRadius')) else None
             focal_fn_raw = mod_row.get('focalFunction')
-            focal_fn = str(focal_fn_raw).lower() if use_focal and not pd.isna(focal_fn_raw) else "mean"
+            _focal_fn_map = {0: "mean", 1: "sum", 2: "max", 3: "min"}
+            focal_fn = _focal_fn_map.get(int(focal_fn_raw), "mean") if use_focal and not pd.isna(focal_fn_raw) else "mean"
 
             mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
 
@@ -910,15 +917,19 @@ write_modified = (
 )
 if write_modified:
     last_mod_idx = len(resistanceModifiers) - 1
-    if is_tiling:
+    if is_tiling and mode == "loop":
         tile_mod_paths = [
             os.path.join(dataPath, "omniscape_ResistanceModifier", f"tile-{tid}-mod{last_mod_idx}-resistance.tif")
             for tid in tiles_to_process
         ]
         merged_mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", "resistance-modified.tif")
-        merge_tile_outputs(tile_mod_paths, merged_mod_path)
+        merge_tile_outputs(tile_mod_paths, merged_mod_path, manifest['full_extent'])
         myOutput.modifiedResistance = pd.Series(merged_mod_path)
-        ps.environment.update_run_log(f"  Added modifiedResistance output (merged tiles)")
+        ps.environment.update_run_log("  Added modifiedResistance output (merged tiles)")
+    elif is_tiling:
+        ps.environment.update_run_log(
+            "  Deferring modifiedResistance merge until tile aggregation is complete"
+        )
     else:
         mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", f"mod{last_mod_idx}-resistance.tif")
         if os.path.exists(mod_path):

@@ -396,20 +396,21 @@ def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
         mod_nodata = mod_src.nodata
 
     mod_mask = (modifier_data == mod_nodata) if mod_nodata is not None else np.zeros_like(modifier_data, dtype=bool)
+    focal_input = np.where(mod_mask, np.nan, modifier_data)
 
     if focal_radius is not None and focal_radius > 0:
         size = 2 * focal_radius + 1
-        padded = np.pad(modifier_data, focal_radius, mode='edge')
+        padded = np.pad(focal_input, focal_radius, mode='constant', constant_values=np.nan)
         windows = sliding_window_view(padded, (size, size))
         fn = focal_function.lower()
         if fn == "mean":
-            modifier_data = windows.mean(axis=(-2, -1))
+            modifier_data = np.nanmean(windows, axis=(-2, -1))
         elif fn == "sum":
-            modifier_data = windows.sum(axis=(-2, -1))
+            modifier_data = np.nansum(windows, axis=(-2, -1))
         elif fn == "max":
-            modifier_data = windows.max(axis=(-2, -1))
+            modifier_data = np.nanmax(windows, axis=(-2, -1))
         elif fn == "min":
-            modifier_data = windows.min(axis=(-2, -1))
+            modifier_data = np.nanmin(windows, axis=(-2, -1))
 
     multiplier_array = np.ones_like(resistance_data, dtype=np.float64)
     for _, row in modifier_table.iterrows():
