@@ -771,6 +771,25 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
                     os.rename(cropped_path, buffered_path)
                     ps.environment.update_run_log(f"  Removed buffer from {output_file}")
 
+            if applyModifier:
+                for mod_idx in range(len(resistanceModifiers)):
+                    mod_path = os.path.join(
+                        dataPath, "omniscape_ResistanceModifier",
+                        f"tile-{tile_id}-mod{mod_idx}-resistance.tif"
+                    )
+                    if os.path.exists(mod_path):
+                        cropped_path = mod_path.replace('.tif', '_cropped.tif')
+                        crop_buffer_from_output(
+                            mod_path,
+                            cropped_path,
+                            tile_info['original_extent'],
+                            manifest['buffer_pixels'],
+                            tile_info.get('buffered_extent')
+                        )
+                        os.remove(mod_path)
+                        os.rename(cropped_path, mod_path)
+                        ps.environment.update_run_log(f"  Removed buffer from modifier tile mod{mod_idx}")
+
         # Handle mode-specific post-processing
         if mode == "multiprocessing":
             # Extend tiles to full extent for SyncroSim merging
