@@ -578,8 +578,8 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             use_focal = mod_row.get('useFocalWindow') == "true"
             focal_radius = int(mod_row['focalRadius']) if use_focal and not pd.isna(mod_row.get('focalRadius')) else None
             focal_fn_raw = mod_row.get('focalFunction')
-            _focal_fn_map = {0: "mean", 1: "sum", 2: "max", 3: "min"}
-            focal_fn = _focal_fn_map.get(int(focal_fn_raw), "mean") if use_focal and not pd.isna(focal_fn_raw) else "mean"
+            _focal_fn_map = {"0": "mean", "1": "sum", "2": "max", "3": "min"}
+            focal_fn = _focal_fn_map.get(str(focal_fn_raw), str(focal_fn_raw).lower()) if use_focal and not pd.isna(focal_fn_raw) else "mean"
 
             mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
 
