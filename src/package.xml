@@ -33,6 +33,7 @@
       </dataSheet>
 
       <dataSheet name="ReclassTable" displayName="Reclass Table">
+          <column name="landCoverLabel" displayName="Land cover class" dataType="String" isOptional="True" validationCondition="None" />
           <column name="landCover" displayName="Land cover class ID" dataType="Integer" validationType="WholeNumber" validationCondition="None" />
           <column name="resistanceValue" displayName="Resistance value" dataType="Double" validationType="Decimal" validationCondition="None" />
       </dataSheet>

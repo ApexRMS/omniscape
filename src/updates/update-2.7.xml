@@ -8,4 +8,10 @@
         <item>ALTER TABLE omniscape_outputSpatial ADD COLUMN modifiedResistance TEXT</item>
     </action>
 
+    <!-- Add optional landCoverLabel column to ReclassTable for user-facing land cover descriptions.
+         This column is display-only and has no effect on the analysis. -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_ReclassTable">
+        <item>ALTER TABLE omniscape_ReclassTable ADD COLUMN landCoverLabel TEXT</item>
+    </action>
+
 </update>
