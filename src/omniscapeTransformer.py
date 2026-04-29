@@ -467,7 +467,7 @@ if applyModifier:
                 sys.exit(f"Modifier raster '{mod_name}' does not fully cover the resistance raster extent.")
         use_focal = mod_row.get('useFocalWindow') == "Yes"
         if use_focal:
-            if pd.isna(mod_row.get('focalRadius')):
+            if pd.isna(mod_row.get('focalRadius')) or int(mod_row.get('focalRadius')) <= 0:  
                 sys.exit(f"'Focal radius' is required for modifier '{mod_name}' when 'Use focal window' is enabled.")
         mod_rows = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_name]
         if mod_rows.empty:
@@ -953,7 +953,7 @@ if write_modified:
         mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", f"mod{last_mod_idx}-resistance.tif")
         if os.path.exists(mod_path):
             myOutput.modifiedResistance = pd.Series(mod_path)
-            ps.environment.update_run_log(f"  Added modifiedResistance output")
+            ps.environment.update_run_log("  Added modifiedResistance output")
 
 # Save outputs to SyncroSim ---------------------------------------------------------------------
 
