@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.6.0" minSyncroSimVersion="3.1.0">
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.7.0" minSyncroSimVersion="3.1.0">
 
       <dataSheet name="movementTypes" displayName="Connectivity Categories" dataScope="Project" displayMember="Name">
           <column name="Name" dataType="String" />
@@ -35,6 +35,25 @@
       <dataSheet name="ReclassTable" displayName="Reclass Table">
           <column name="landCover" displayName="Land cover class ID" dataType="Integer" validationType="WholeNumber" validationCondition="None" />
           <column name="resistanceValue" displayName="Resistance value" dataType="Double" validationType="Decimal" validationCondition="None" />
+      </dataSheet>
+
+      <dataSheet name="ResistanceModifiers" displayName="Resistance Modifiers">
+          <column name="Name" displayName="Name" dataType="String" />
+          <column name="modifierFile" displayName="Modifier raster" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
+          <column name="useFocalWindow" displayName="Use focal window" dataType="Boolean" isOptional="True" defaultValue="0" description="Aggregate the modifier raster within a moving window before applying the lookup table." />
+          <column name="focalRadius" displayName="Focal radius (pixels)" dataType="Integer" validationType="WholeNumber" validationCondition="Greater" formula1="0" isOptional="True" description="Radius in pixels for the focal window. Required when Use focal window is enabled." />
+          <column name="focalFunction" displayName="Focal function" dataType="Integer" validationType="List" formula1="0:Mean|1:Sum|2:Max|3:Min" isOptional="True" defaultValue="0" />
+      </dataSheet>
+
+      <dataSheet name="ResistanceModifierTable" displayName="Modifier Lookup Table">
+          <column name="modifier" displayName="Modifier name" dataType="String" description="Must match a Name in the Resistance Modifiers table." />
+          <column name="minValue" displayName="Min modifier value" dataType="Double" validationType="Decimal" validationCondition="None" />
+          <column name="maxValue" displayName="Max modifier value" dataType="Double" validationType="Decimal" validationCondition="None" />
+          <column name="multiplier" displayName="Resistance multiplier" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" description="Value by which to multiply resistance. 1.0 = no change." />
+      </dataSheet>
+
+      <dataSheet name="ResistanceModifierOptions" displayName="Options" isSingleRow="True">
+          <column name="writeModifiedResistance" displayName="Write modified resistance" dataType="Boolean" isOptional="True" defaultValue="0" description="Output the final modified resistance raster after all modifiers are applied." />
       </dataSheet>
 
       <dataSheet name="OutputOptions" displayName="Output Options" isSingleRow="True">
@@ -85,6 +104,7 @@
           <column name="flowPotential" displayName="Flow potential" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
           <column name="normalizedCumCurrmap" displayName="Normalized current flow" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
           <column name="classifiedResistance" displayName="Classified resistance" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
+          <column name="modifiedResistance" displayName="Modified resistance" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
       </dataSheet>
 
       <dataSheet name="outputSpatialMovement" displayName="Connectivity Categories" isSingleRow="True">
@@ -133,6 +153,9 @@
         <dataSheet name="Condition2" type="Input" />
         <dataSheet name="Condition1" type="Input" />
         <dataSheet name="ReclassTable" type="Input" />
+        <dataSheet name="ResistanceModifiers" type="Input" />
+        <dataSheet name="ResistanceModifierTable" type="Input" />
+        <dataSheet name="ResistanceModifierOptions" type="Input" />
     </transformer>
 
     <transformer
@@ -162,6 +185,11 @@
         <group name="Resistance0Reclassification" displayName="Resistance Reclassification">
           <item name="ResistanceOptions" />
           <item name="ReclassTable" />
+        </group>
+        <group name="Resistance0Modifier" displayName="Resistance Modifier">
+          <item name="ResistanceModifierOptions" />
+          <item name="ResistanceModifiers" />
+          <item name="ResistanceModifierTable" />
         </group>
         <item name="OutputOptions" />
         <group name="Conditional0Connectivity" displayName="Conditional Connectivity">
@@ -196,6 +224,7 @@
       <group name="Inputs" displayName="Inputs">
         <item name="RequiredSourceFile" displayName="Sources" dataSheet="Required" column="sourceFile" />
         <item name="outputSpatialClassifiedResistance" displayName="Resistance" dataSheet="outputSpatial" column="classifiedResistance" />
+        <item name="outputSpatialModifiedResistance" displayName="Modified resistance" dataSheet="outputSpatial" column="modifiedResistance" />
       </group>
       <group name="Outputs" displayName="Outputs">
         <item name="outputSpatialCumCurrmap" displayName="Cumulative current flow" dataSheet="outputSpatial" column="cumCurrmap" />

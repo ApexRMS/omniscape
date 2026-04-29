@@ -363,3 +363,69 @@ def merge_tile_outputs(tile_output_paths, final_output_path, full_extent_info):
         os.remove(vrt_path)
 
     ps.environment.update_run_log(f"Merge complete: {os.path.basename(final_output_path)}")
+
+
+# ============================================================================
+# RESISTANCE MODIFIER
+# ============================================================================
+
+def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
+                               focal_radius=None, focal_function="mean", output_path=None):
+    """
+    Multiply resistance values by a per-pixel multiplier derived from a secondary raster.
+
+    For each pixel:
+      1. Read modifier raster value (optionally aggregated via focal window first)
+      2. Look up multiplier: first range where minValue <= value < maxValue
+      3. Multiply resistance by that multiplier (pixels matching no range use 1.0)
+
+    The modifier raster must share the CRS of the resistance raster. In tiled mode the
+    full modifier raster path is passed and windowed reading clips it to the tile extent.
+    """
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    with rasterio.open(resistance_path) as res_src:
+        resistance_data = res_src.read(1).astype(np.float64)
+        res_meta = res_src.meta.copy()
+        res_nodata = res_src.nodata
+        tile_bounds = res_src.bounds
+
+    with rasterio.open(modifier_path) as mod_src:
+        window = mod_src.window(*tile_bounds)
+        modifier_data = mod_src.read(1, window=window).astype(np.float64)
+        mod_nodata = mod_src.nodata
+
+    mod_mask = (modifier_data == mod_nodata) if mod_nodata is not None else np.zeros_like(modifier_data, dtype=bool)
+    focal_input = np.where(mod_mask, np.nan, modifier_data)
+
+    if focal_radius is not None and focal_radius > 0:
+        size = 2 * focal_radius + 1
+        padded = np.pad(focal_input, focal_radius, mode='constant', constant_values=np.nan)
+        windows = sliding_window_view(padded, (size, size))
+        fn = focal_function.lower()
+        if fn == "mean":
+            modifier_data = np.nanmean(windows, axis=(-2, -1))
+        elif fn == "sum":
+            modifier_data = np.nansum(windows, axis=(-2, -1))
+        elif fn == "max":
+            modifier_data = np.nanmax(windows, axis=(-2, -1))
+        elif fn == "min":
+            modifier_data = np.nanmin(windows, axis=(-2, -1))
+
+    multiplier_array = np.ones_like(resistance_data, dtype=np.float64)
+    for _, row in modifier_table.iterrows():
+        mask = (~mod_mask) & (modifier_data >= row['minValue']) & (modifier_data < row['maxValue'])
+        multiplier_array[mask] = float(row['multiplier'])
+
+    modified = resistance_data * multiplier_array
+    if res_nodata is not None:
+        modified[resistance_data == res_nodata] = res_nodata
+
+    if output_path is None:
+        output_path = resistance_path.replace('.tif', '_modified.tif')
+
+    res_meta.update(dtype='float32', compress='lzw')
+    with rasterio.open(output_path, 'w', **res_meta) as dst:
+        dst.write(modified.astype(np.float32), 1)
+
+    return output_path

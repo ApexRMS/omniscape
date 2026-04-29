@@ -22,7 +22,8 @@ from helperFunctions import (
     crop_buffer_from_output,
     extend_tile_to_full_extent,
     merge_tile_outputs,
-    safe_progress_bar
+    safe_progress_bar,
+    apply_resistance_modifier
 )
 
 # Global variable to track Julia process for cleanup
@@ -113,6 +114,11 @@ outputOptions = myScenario.datasheets(name = "omniscape_OutputOptions")
 multiprocessing = myScenario.datasheets(name = "core_Multiprocessing")
 tilingOptions = myScenario.datasheets(name = "omniscape_TilingOptions")
 juliaConfig = myLibrary.datasheets(name = "core_JlConfig")  # Julia config is now at library level
+resistanceModifiers = myScenario.datasheets(name = "omniscape_ResistanceModifiers", show_full_paths=True)
+resistanceModifierTable = myScenario.datasheets(name = "omniscape_ResistanceModifierTable")
+resistanceModifierOptions = myScenario.datasheets(name = "omniscape_ResistanceModifierOptions")
+
+applyModifier = not resistanceModifiers.empty
 
 # ============================================================================
 # LOAD TILE MANIFEST AND DETERMINE EXECUTION MODE
@@ -444,6 +450,28 @@ if not futureConditions.empty:
     if futureConditions.compareToFuture.item() == "both" and (futureConditions.condition1FutureFile.item() != futureConditions.condition1FutureFile.item() or futureConditions.condition2FutureFile.item() != futureConditions.condition2FutureFile.item()):
         sys.exit("'Compare to future' was set to 'both', therefore 'Condition 1 future file' and 'Condition 2 future file' are required.")
 
+if applyModifier:
+    for _, mod_row in resistanceModifiers.iterrows():
+        mod_name = mod_row['Name']
+        mod_file = mod_row['modifierFile']
+        if not os.path.isfile(mod_file):
+            sys.exit(f"Modifier raster '{mod_name}' not found: {mod_file}")
+        with rasterio.open(mod_file) as mod_src:
+            if mod_src.crs != resistanceLayer.crs:
+                sys.exit(f"Modifier raster '{mod_name}' must have the same CRS as 'Resistance file'.")
+            if mod_src.res != resistanceLayer.res:
+                sys.exit(f"Modifier raster '{mod_name}' resolution {mod_src.res} does not match resistance raster resolution {resistanceLayer.res}.")
+            rb = resistanceLayer.bounds
+            mb = mod_src.bounds
+            if mb.left > rb.left or mb.right < rb.right or mb.bottom > rb.bottom or mb.top < rb.top:
+                sys.exit(f"Modifier raster '{mod_name}' does not fully cover the resistance raster extent.")
+        use_focal = mod_row.get('useFocalWindow') == "Yes"
+        if use_focal:
+            if pd.isna(mod_row.get('focalRadius')) or int(mod_row.get('focalRadius')) <= 0:  
+                sys.exit(f"'Focal radius' is required for modifier '{mod_name}' when 'Use focal window' is enabled.")
+        mod_rows = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_name]
+        if mod_rows.empty:
+            sys.exit(f"'Modifier Lookup Table' has no rows for modifier '{mod_name}'.")
 
 
 # Change "Yes" and "No" to "true" and "false" ----------------------------------
@@ -453,6 +481,8 @@ resistanceOptions = resistanceOptions.replace({'Yes': 'true', 'No': 'false'})
 conditionalOptions = conditionalOptions.replace({'Yes': 'true', 'No': 'false'})
 outputOptions = outputOptions.replace({'Yes': 'true', 'No': 'false'})
 multiprocessing = multiprocessing.replace({'Yes': 'true', 'No': 'false'})
+resistanceModifiers = resistanceModifiers.replace({'Yes': 'true', 'No': 'false'})
+resistanceModifierOptions = resistanceModifierOptions.replace({'Yes': 'true', 'No': 'false'})
 
 
 
@@ -532,6 +562,36 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         resistance_file_path = requiredDataValidation.resistanceFile.item()
         source_file_path = requiredDataValidation.sourceFile.item() if not pd.isna(requiredDataValidation.sourceFile.item()) else "None"
         project_name = os.path.join(dataPath, "omniscape_outputSpatial")
+
+    # ========================================================================
+    # APPLY RESISTANCE MODIFIER (if configured)
+    # ========================================================================
+
+    if applyModifier:
+        modifier_dir = os.path.join(dataPath, "omniscape_ResistanceModifier")
+        os.makedirs(modifier_dir, exist_ok=True)
+
+        for mod_idx, (_, mod_row) in enumerate(resistanceModifiers.iterrows()):
+            fname_base = f"tile-{tile_id}-mod{mod_idx}" if is_tiling else f"mod{mod_idx}"
+            mod_output_path = os.path.join(modifier_dir, f"{fname_base}-resistance.tif")
+
+            use_focal = mod_row.get('useFocalWindow') == "true"
+            focal_radius = int(mod_row['focalRadius']) if use_focal and not pd.isna(mod_row.get('focalRadius')) else None
+            focal_fn_raw = mod_row.get('focalFunction')
+            _focal_fn_map = {"0": "mean", "1": "sum", "2": "max", "3": "min"}
+            focal_fn = _focal_fn_map.get(str(focal_fn_raw), str(focal_fn_raw).lower()) if use_focal and not pd.isna(focal_fn_raw) else "mean"
+
+            mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
+
+            resistance_file_path = apply_resistance_modifier(
+                resistance_path=resistance_file_path,
+                modifier_path=mod_row['modifierFile'],
+                modifier_table=mod_table,
+                focal_radius=focal_radius,
+                focal_function=focal_fn,
+                output_path=mod_output_path
+            )
+            ps.environment.update_run_log(f"Applied modifier '{mod_row['Name']}' → {mod_output_path}")
 
     # ========================================================================
     # GENERATE CONFIG.INI FOR THIS TILE
@@ -711,6 +771,25 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
                     os.rename(cropped_path, buffered_path)
                     ps.environment.update_run_log(f"  Removed buffer from {output_file}")
 
+            if applyModifier:
+                for mod_idx in range(len(resistanceModifiers)):
+                    mod_path = os.path.join(
+                        dataPath, "omniscape_ResistanceModifier",
+                        f"tile-{tile_id}-mod{mod_idx}-resistance.tif"
+                    )
+                    if os.path.exists(mod_path):
+                        cropped_path = mod_path.replace('.tif', '_cropped.tif')
+                        crop_buffer_from_output(
+                            mod_path,
+                            cropped_path,
+                            tile_info['original_extent'],
+                            manifest['buffer_pixels'],
+                            tile_info.get('buffered_extent')
+                        )
+                        os.remove(mod_path)
+                        os.rename(cropped_path, mod_path)
+                        ps.environment.update_run_log(f"  Removed buffer from modifier tile mod{mod_idx}")
+
         # Handle mode-specific post-processing
         if mode == "multiprocessing":
             # Extend tiles to full extent for SyncroSim merging
@@ -849,6 +928,32 @@ else:
     ps.environment.update_run_log(f"  Added classifiedResistance output (original)")
 
 
+
+write_modified = (
+    applyModifier
+    and not resistanceModifierOptions.empty
+    and resistanceModifierOptions.writeModifiedResistance.item() == "true"
+)
+if write_modified:
+    last_mod_idx = len(resistanceModifiers) - 1
+    if is_tiling and mode == "loop":
+        tile_mod_paths = [
+            os.path.join(dataPath, "omniscape_ResistanceModifier", f"tile-{tid}-mod{last_mod_idx}-resistance.tif")
+            for tid in tiles_to_process
+        ]
+        merged_mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", "resistance-modified.tif")
+        merge_tile_outputs(tile_mod_paths, merged_mod_path, manifest['full_extent'])
+        myOutput.modifiedResistance = pd.Series(merged_mod_path)
+        ps.environment.update_run_log("  Added modifiedResistance output (merged tiles)")
+    elif is_tiling:
+        ps.environment.update_run_log(
+            "  Deferring modifiedResistance merge until tile aggregation is complete"
+        )
+    else:
+        mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", f"mod{last_mod_idx}-resistance.tif")
+        if os.path.exists(mod_path):
+            myOutput.modifiedResistance = pd.Series(mod_path)
+            ps.environment.update_run_log("  Added modifiedResistance output")
 
 # Save outputs to SyncroSim ---------------------------------------------------------------------
 

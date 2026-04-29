@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<update comment="Update to omniscape 2.7 that adds resistance modifier support">
+
+    <!-- Add modifiedResistance output column to the existing outputSpatial table.
+         New tables (ResistanceModifiers, ResistanceModifierTable, ResistanceModifierOptions)
+         are created automatically by SyncroSim schema migration. -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_outputSpatial">
+        <item>ALTER TABLE omniscape_outputSpatial ADD COLUMN modifiedResistance TEXT</item>
+    </action>
+
+</update>
