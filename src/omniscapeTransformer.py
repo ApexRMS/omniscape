@@ -497,7 +497,7 @@ if not reclassTable.empty and (reclassTable != "None").values.any():
     #reclassTable.resistanceValue = reclassTable.resistanceValue.astype(str)
     reclassTable.loc[reclassTable["resistanceValue"] == -9999, "resistanceValue"] = "missing"
     with open(os.path.join(reclassTablePath, "reclass_table.txt"), "w") as f:
-        file = reclassTable.to_string(header=False, index=False)
+        file = reclassTable[["landCover", "resistanceValue"]].to_string(header=False, index=False)
         f.write(file)
 else:
     reclassTablePath = "None"
