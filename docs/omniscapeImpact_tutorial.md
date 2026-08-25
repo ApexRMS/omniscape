@@ -23,7 +23,7 @@ In the meantime, please note that some instructions, references, and/or images m
 
 ## **Measuring the impact of connectivity change with omniscapeImpact**
 
-This tutorial guides you through using the **omniscapeImpact** add-on package to **omniscape SyncroSim**. It covers the following steps:
+This tutorial guides you through using the **omniscapeImpact** package, which extends **omniscape SyncroSim**. It covers the following steps:
 
 1. <A href="#step-1">Installing the omniscapeImpact package</A>
 2. <A href="#step-2">Creating and configuring an omniscapeImpact SyncroSim Library</A>
@@ -33,7 +33,11 @@ This tutorial guides you through using the **omniscapeImpact** add-on package to
 
 ### **Requirements**
 
-Before you begin, make sure that the **omniscape** SyncroSim package version 1.1.1 is installed. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
+Before you begin, make sure that the **omniscape** SyncroSim package version 2.7.0 is installed, along with SyncroSim version 3.1.0 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
+
+> **Note:** **omniscapeImpact** shares its Conda environment with **omniscape**, so **omniscape** must be installed and its Conda environment created first.
+
+The Baseline and Alternative Scenarios being compared must be directly comparable. **omniscapeImpact** will stop with an error if their output rasters differ in extent, resolution or projection, or if they disagree about which pixels hold valid data. If the two Scenarios were classified using different *Category Thresholds*, the connectivity category outputs are skipped and only the *Normalized current* comparison is produced.
 
 <br>
 
