@@ -121,23 +121,19 @@ Note that it lists one pipeline stage, <i>Connectivity Impact Assessment</i>.
 
 <img align="center" style="padding: 13px" width="550" src="./images/screenshot53.png">
 
-6\.	Navigate to the **Add-on** tab. 
+6\.	Close the scenario properties and, in the *Library Explorer* window, expand the **Impact of increased resistance** scenario to expose its **Dependencies** folder.
 
 <div class=indentation>
-  a.	Under the <i>Impact Assessment</i> node, you will find the package’s only datasheet, called <i>Scenarios to Compare</i>. 
-</div>
-
-<img align="center" style="padding: 13px" width="550" src="./images/screenshot54.png">
-
+The two scenarios to be compared are supplied as <i>dependencies</i> of the impact scenario, added by dragging each scenario onto the <i>Dependencies</i> folder. <b>The order matters</b>:
 <div class=indentation>
-It takes as input the ID of the two scenarios to be compared:
-<div class=indentation>
-  i.	<i>Baseline Scenario ID</i> – represents the reference connectivity state from which changes will be measured. For this example, the ID is <i>1</i> corresponding to the <i>Reference resistance</i> scenario.
+  i.	The <b>first</b> dependency is the <i>Baseline</i> – the reference connectivity state from which changes will be measured. For this example, it is the <i>Reference resistance</i> scenario.
   <br><br>
-  ii.	<i>Alternative Scenario ID</i> – represents the changed connectivity state. For this example, the ID is <i>2</i> corresponding to the <i>Increased resistance</i> scenario.
+  ii.	The <b>second</b> dependency is the <i>Alternative</i> – the changed connectivity state. For this example, it is the <i>Increased resistance</i> scenario.
 </div>
+<br>
+To swap the Baseline and Alternative, reorder the dependencies. The run log for each run records which scenario was used as which. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent valid results.
 </div>
-7\.	Close the scenario properties.
+7\.	Collapse the scenario.
 
 <br>
 
