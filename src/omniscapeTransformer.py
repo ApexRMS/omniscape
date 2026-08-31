@@ -14,6 +14,7 @@ import numpy as np
 import subprocess
 import signal
 import atexit
+import re
 
 # Import helper functions
 from helperFunctions import (
@@ -518,6 +519,47 @@ jlExe = juliaConfig.ExePath.item()
 if ' ' in dataPath:
     sys.exit("Due to julia requirements, the path to the SyncroSim Library may not contain any spaces.")
 
+
+# ============================================================================
+# DETECT JULIA VERSION (Julia 1.12+ needs a threading workaround)
+# ============================================================================
+
+# Julia 1.12 starts an extra "interactive" thread by default: `-t N` now means
+# N worker threads PLUS one interactive thread. Thread IDs are global across
+# pools, so workers get IDs 2..N+1 while Threads.nthreads() still returns N.
+# Omniscape.jl allocates its per-thread accumulator arrays sized by nthreads()
+# but indexes them by threadid(), so every parallel run on Julia 1.12+ fails
+# with a BoundsError (Omniscape.jl issue #165). Passing `-t N,0` disables the
+# interactive thread and restores the pre-1.12 behaviour.
+
+def get_julia_version(julia_exe):
+    """Return the Julia version as a (major, minor, patch) tuple, or None.
+
+    Runs `julia --version` and parses its output. Returns None if the version
+    cannot be determined, in which case the caller should proceed with default
+    behaviour rather than failing.
+    """
+    try:
+        result = subprocess.run(
+            [julia_exe, "--version"],
+            capture_output = True, universal_newlines = True, timeout = 120)
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout)
+        if match:
+            return tuple(int(g) for g in match.groups())
+    except Exception as versionError:
+        ps.environment.update_run_log(
+            "Could not determine the Julia version (" + repr(versionError) + "). "
+            "Proceeding with default threading flags.")
+    return None
+
+julia_version = get_julia_version(jlExe)
+
+if julia_version is not None:
+    ps.environment.update_run_log(
+        "Julia version detected: " + ".".join(str(v) for v in julia_version))
+
+julia_112_or_newer = julia_version is not None and julia_version >= (1, 12, 0)
+
 # Storage for tile outputs (for merging in loop mode)
 tile_output_paths = {}  # Dict: {output_name: [tile1_path, tile2_path, ...]}
 
@@ -696,9 +738,22 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     # Build command with Julia thread count
     # Julia threads handle parallelization, while parallel_batch_size controls block batching
     if julia_workers_per_tile > 1:
-        runOmniscape = [jlExe, "-t", str(julia_workers_per_tile), runFile]
+        if julia_112_or_newer:
+            # Julia 1.12+ starts an extra interactive thread with `-t N`, which
+            # breaks Omniscape.jl's per-thread arrays (issue #165). `-t N,0`
+            # disables the interactive thread and restores 1.11 behaviour.
+            thread_arg = f"{julia_workers_per_tile},0"
+            ps.environment.update_run_log(
+                f"Julia {'.'.join(str(v) for v in julia_version)} detected: disabling the "
+                f"interactive thread (-t {thread_arg}) to work around a known "
+                f"Omniscape.jl parallelism bug on Julia 1.12+ "
+                f"(github.com/Circuitscape/Omniscape.jl/issues/165)"
+            )
+        else:
+            thread_arg = str(julia_workers_per_tile)
+        runOmniscape = [jlExe, "-t", thread_arg, runFile]
         ps.environment.update_run_log(
-            f"Julia command: julia -t {julia_workers_per_tile} (threads available to Omniscape)"
+            f"Julia command: julia -t {thread_arg} (threads available to Omniscape)"
         )
     else:
         runOmniscape = [jlExe, runFile]
@@ -738,7 +793,19 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     ps.environment.update_run_log(f">>> Completed with exit code: {exit_code} (took {elapsed_time:.1f}s) <<<")
 
     if exit_code != 0:
-        sys.exit(f"Omniscape.jl failed with exit code {exit_code}")
+        failure_message = f"Omniscape.jl failed with exit code {exit_code}."
+        if julia_112_or_newer:
+            # The -t N,0 workaround should prevent the known Julia 1.12+
+            # parallelism bug, but if the failure persists, tell the user what
+            # is going on rather than leaving only a Julia stack trace.
+            failure_message += (
+                f" NOTE: You are running Julia "
+                f"{'.'.join(str(v) for v in julia_version)}. Omniscape.jl has a "
+                f"known parallelism bug on Julia 1.12+ "
+                f"(github.com/Circuitscape/Omniscape.jl/issues/165); this "
+                f"failure may be related. If the problem persists, Julia 1.10 "
+                f"LTS or 1.11 is recommended.")
+        sys.exit(failure_message)
 
     # ========================================================================
     # POST-PROCESS TILE OUTPUTS
