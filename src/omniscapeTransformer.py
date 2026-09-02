@@ -801,9 +801,7 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             failure_message += (
                 f" NOTE: You are running Julia "
                 f"{'.'.join(str(v) for v in julia_version)}. Omniscape.jl has a "
-                f"known parallelism bug on Julia 1.12+ "
-                f"(github.com/Circuitscape/Omniscape.jl/issues/165); this "
-                f"failure may be related. If the problem persists, Julia 1.10 "
+                f"known parallelism bug on Julia 1.12+. If the problem persists, Julia 1.10 "
                 f"LTS or 1.11 is recommended.")
         sys.exit(failure_message)
 
