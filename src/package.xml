@@ -127,7 +127,6 @@
       </dataSheet>
 
       <dataSheet name="ensembleWeights" displayName="Ensemble Weights">
-          <column name="scenarioId" displayName="Scenario ID" dataType="Integer" validationType="WholeNumber" validationCondition="None" allowDbNull="False" description="ID of a dependency Scenario. Dependencies without a row here weigh 1.0." />
           <column name="weight" displayName="Weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" allowDbNull="False" description="Relative weight for this Scenario. Greater than 1 increases its influence, less than 1 decreases it. To exclude a Scenario, remove it from the dependencies." />
           <column name="Description" dataType="String" isOptional="True" />
       </dataSheet>
