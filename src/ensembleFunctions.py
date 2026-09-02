@@ -170,6 +170,15 @@ def combine_layers(layer_stack, mask_stack, weights, method):
     best/worst connectivity for any Scenario", where scaling by a weight would
     change which Scenario wins.
 
+    Both weighted methods normalize by the weight of the layers actually
+    present at a pixel, not by the weight of every layer. No-data means "not
+    known here", not "zero connectivity", so a pixel covered by 3 of 5
+    Scenarios must not be pushed down relative to one covered by all 5 - the
+    two would otherwise be classified into different categories on the
+    strength of coverage alone. Weighted Sum therefore scales its partial sum
+    up to the full weight total, making it exactly Weighted Mean times the sum
+    of all weights and keeping the two methods consistent with each other.
+
     Returns (ensemble, ensemble_mask).
     """
     data = layer_stack.astype(float).copy()
@@ -182,13 +191,17 @@ def combine_layers(layer_stack, mask_stack, weights, method):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category = RuntimeWarning)
 
-        if method == "Weighted Mean":
-            weight_totals = np.where(~mask_stack, w, 0.0).sum(axis = 0)
-            weighted_sum = np.nansum(data * w, axis = 0)
+        if method in ("Weighted Mean", "Weighted Sum"):
+            # Weight of the layers holding data at each pixel, so that absent
+            # layers neither contribute nor dilute
+            presentWeight = np.where(~mask_stack, w, 0.0).sum(axis = 0)
+            weightedSum = np.nansum(data * w, axis = 0)
+
+            scale = 1.0 if method == "Weighted Mean" else float(w.sum())
+
             with np.errstate(invalid = "ignore", divide = "ignore"):
-                ensemble = np.where(weight_totals > 0, weighted_sum / weight_totals, np.nan)
-        elif method == "Weighted Sum":
-            ensemble = np.nansum(data * w, axis = 0)
+                ensemble = np.where(presentWeight > 0,
+                                    weightedSum * scale / presentWeight, np.nan)
         elif method == "Maximum":
             ensemble = np.nanmax(data, axis = 0)
         elif method == "Minimum":
