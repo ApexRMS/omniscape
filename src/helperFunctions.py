@@ -34,6 +34,24 @@ def safe_progress_bar(message, report_type="message"):
         print(f"[Progress] {message}")
 
 
+def safe_update_run_log(message):
+    """
+    Wrapper for ps.environment.update_run_log that falls back to print().
+
+    ps.environment.update_run_log raises RuntimeError whenever the SSIM_*
+    environment variables are absent - which happens on Linux under SyncroSim
+    and on any run outside SyncroSim at all. Logging must never be the reason a
+    transformer fails, so the message is printed to the console instead.
+
+    Args:
+        message: Message string (supports f-strings)
+    """
+    try:
+        ps.environment.update_run_log(message)
+    except RuntimeError:
+        print(f"[Run log] {message}")
+
+
 # ============================================================================
 # TILING AND MANIFEST FUNCTIONS
 # ============================================================================

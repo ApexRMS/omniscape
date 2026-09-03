@@ -12,7 +12,7 @@ import math
 import json
 import shutil
 from datetime import datetime
-from helperFunctions import safe_progress_bar
+from helperFunctions import safe_progress_bar, safe_update_run_log
 
 safe_progress_bar(message="Initializing PrepMultiprocessing", report_type="message")
 
@@ -72,6 +72,13 @@ def calculate_optimal_grid(width, height, desired_tile_count):
     """
     aspect_ratio = width / height
 
+    # Tiling exists to split the work up, so a 1x1 grid is never a valid answer
+    # however well it scores. Without this floor, a desired count of 2 (which is
+    # what a single available core produces) selects 1x1 on a near-square raster:
+    # its count penalty of 1 beats 2x1's aspect penalty of 1.5, and the caller's
+    # own "at least 2 tiles" guarantee is silently discarded.
+    minimum_tile_count = 2
+
     # Find best grid by testing combinations near desired count
     best_grid = None
     best_score = float('inf')
@@ -82,6 +89,9 @@ def calculate_optimal_grid(width, height, desired_tile_count):
     for rows in range(1, max_dim + 1):
         for cols in range(1, max_dim + 1):
             actual_count = rows * cols
+
+            if actual_count < minimum_tile_count:
+                continue
 
             # Skip grids that are too far from desired count
             if abs(actual_count - desired_tile_count) > max(3, desired_tile_count * 0.3):
@@ -102,8 +112,8 @@ def calculate_optimal_grid(width, height, desired_tile_count):
                 best_grid = (rows, cols, actual_count)
 
     if best_grid is None:
-        # Fallback to square grid
-        dim = int(math.ceil(math.sqrt(desired_tile_count)))
+        # Fallback to square grid, still never smaller than the minimum
+        dim = max(2, int(math.ceil(math.sqrt(desired_tile_count))))
         best_grid = (dim, dim, dim * dim)
 
     rows, cols, actual_count = best_grid
@@ -245,21 +255,21 @@ if not requiredData.empty and 'sourceFile' in requiredData.columns:
 if requiredData.empty or 'radius' not in requiredData.columns or pd.isna(requiredData.radius.item()):
     sys.exit("PrepMultiprocessing requires 'Radius' to be specified first. Please configure Omniscape parameters before running tiling.")
 radius = int(requiredData.radius.item())
-ps.environment.update_run_log(f"Omniscape radius: {radius} pixels")
+safe_update_run_log(f"Omniscape radius: {radius} pixels")
 
 # Block size (optional parameter, default=1)
 block_size = 1
 if not generalOptions.empty and 'blockSize' in generalOptions.columns:
     if not pd.isna(generalOptions.blockSize.item()):
         block_size = int(generalOptions.blockSize.item())
-ps.environment.update_run_log(f"Omniscape block_size: {block_size}")
+safe_update_run_log(f"Omniscape block_size: {block_size}")
 
 # Get available cores for parallelization
 available_cores = 1
 if not multiprocessing.empty and 'MaximumJobs' in multiprocessing.columns:
     if not pd.isna(multiprocessing.MaximumJobs.item()):
         available_cores = int(multiprocessing.MaximumJobs.item())
-ps.environment.update_run_log(f"Available cores (MaximumJobs): {available_cores}")
+safe_update_run_log(f"Available cores (MaximumJobs): {available_cores}")
 
 # Get parallelization intensity
 # Map intensity ID to name (0:Auto, 1:Conservative, 2:Balanced, 3:Aggressive)
@@ -280,12 +290,12 @@ if not tilingOptions.empty and 'ParallelizationIntensity' in tilingOptions.colum
             if intensity_value in ["Auto", "Conservative", "Balanced", "Aggressive"]:
                 intensity = intensity_value
             else:
-                ps.environment.update_run_log(f"WARNING: Invalid intensity '{intensity_value}'. Using 'Auto'.")
+                safe_update_run_log(f"WARNING: Invalid intensity '{intensity_value}'. Using 'Auto'.")
         else:
             # New format: integer ID
             intensity_id = int(intensity_value)
             intensity = intensity_map.get(intensity_id, "Auto")
-ps.environment.update_run_log(f"Parallelization intensity: {intensity}")
+safe_update_run_log(f"Parallelization intensity: {intensity}")
 
 # Get buffer multiplier
 buffer_multiplier = 1.0  # default
@@ -295,7 +305,7 @@ if not tilingOptions.empty and 'BufferMultiplier' in tilingOptions.columns:
 
 buffer_pixels = int(radius * buffer_multiplier)
 
-ps.environment.update_run_log(
+safe_update_run_log(
     f"Buffer configuration: {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius of {radius})"
 )
 
@@ -304,17 +314,17 @@ ram_per_thread_gb = 16  # default
 if not tilingOptions.empty and 'RamPerThreadGB' in tilingOptions.columns:
     if not pd.isna(tilingOptions.RamPerThreadGB.item()):
         ram_per_thread_gb = int(tilingOptions.RamPerThreadGB.item())
-ps.environment.update_run_log(f"RAM per thread estimate: {ram_per_thread_gb} GB")
+safe_update_run_log(f"RAM per thread estimate: {ram_per_thread_gb} GB")
 
 # Validate buffer vs radius
 if buffer_multiplier < 1.0:
-    ps.environment.update_run_log(
+    safe_update_run_log(
         f"WARNING: Buffer multiplier ({buffer_multiplier:.1f}) < 1.0. "
         f"This may cause edge effects at tile boundaries. "
         f"Recommend setting to 1.0 or higher."
     )
 
-ps.environment.update_run_log(f"Buffer strategy: real overlapping data only (no padding beyond raster boundary)")
+safe_update_run_log(f"Buffer strategy: real overlapping data only (no padding beyond raster boundary)")
 
 safe_progress_bar(message="Analyzing raster dimensions", report_type="message")
 
@@ -338,14 +348,14 @@ with rasterio.open(resistancePath) as src:
 
     total_pixels = width * height
 
-ps.environment.update_run_log(f"Raster dimensions: {width} x {height} = {total_pixels:,} pixels ({valid_pixels:,} valid)")
+safe_update_run_log(f"Raster dimensions: {width} x {height} = {total_pixels:,} pixels ({valid_pixels:,} valid)")
 
 # ============================================================================
 # INTELLIGENT TILE COUNT CALCULATION
 # Based on Omniscape parameters (block_size, radius) and system resources
 # ============================================================================
 
-ps.environment.update_run_log("Calculating optimal tile configuration based on analysis parameters...")
+safe_update_run_log("Calculating optimal tile configuration based on analysis parameters...")
 
 # Minimum tile dimensions based on block_size
 # Tiles should be at least 7x block_size in each dimension for efficient processing
@@ -364,7 +374,7 @@ min_tile_pixels_with_buffer = min_tile_dimension_with_buffer ** 2
 MIN_PIXELS_FOR_TILING = min_tile_pixels_with_buffer * 2  # Need at least 2 tiles to be worthwhile
 
 if valid_pixels < MIN_PIXELS_FOR_TILING:
-    ps.environment.update_run_log(
+    safe_update_run_log(
         f"Raster too small for multiprocessing ({valid_pixels:,} pixels < {MIN_PIXELS_FOR_TILING:,}). "
         f"Minimum tile size based on block_size={block_size} and buffer={buffer_pixels} "
         f"requires {min_tile_pixels_with_buffer:,} pixels per tile. "
@@ -404,15 +414,15 @@ desired_tile_count = min(
 desired_tile_count = max(2, desired_tile_count)  # At least 2 tiles
 
 # Log the decision process
-ps.environment.update_run_log("Tile count calculation constraints:")
-ps.environment.update_run_log(f"  - Minimum tile dimension: {min_tile_dimension} px (7× block_size={block_size})")
-ps.environment.update_run_log(f"  - Buffer requirement: {buffer_pixels} px on each side")
-ps.environment.update_run_log(f"  - Minimum tile dimension with buffer: {min_tile_dimension_with_buffer} px")
-ps.environment.update_run_log(f"  - Minimum tile area: {min_tile_pixels_with_buffer:,} pixels")
-ps.environment.update_run_log(f"  - Maximum tiles (size constraint): {max_tile_count_size}")
-ps.environment.update_run_log(f"  - Target tiles ({intensity} intensity, {available_cores} cores × {multiplier:.1f}): {target_tile_count_cores}")
-ps.environment.update_run_log(f"  - Target tiles (based on efficiency): {target_tile_count_size}")
-ps.environment.update_run_log(f"  - Final calculated tile count: {desired_tile_count}")
+safe_update_run_log("Tile count calculation constraints:")
+safe_update_run_log(f"  - Minimum tile dimension: {min_tile_dimension} px (7× block_size={block_size})")
+safe_update_run_log(f"  - Buffer requirement: {buffer_pixels} px on each side")
+safe_update_run_log(f"  - Minimum tile dimension with buffer: {min_tile_dimension_with_buffer} px")
+safe_update_run_log(f"  - Minimum tile area: {min_tile_pixels_with_buffer:,} pixels")
+safe_update_run_log(f"  - Maximum tiles (size constraint): {max_tile_count_size}")
+safe_update_run_log(f"  - Target tiles ({intensity} intensity, {available_cores} cores × {multiplier:.1f}): {target_tile_count_cores}")
+safe_update_run_log(f"  - Target tiles (based on efficiency): {target_tile_count_size}")
+safe_update_run_log(f"  - Final calculated tile count: {desired_tile_count}")
 
 # Calculate optimal grid based on raster aspect ratio
 tile_dim_rows, tile_dim_cols, tile_count, grid_desc = calculate_optimal_grid(
@@ -421,54 +431,77 @@ tile_dim_rows, tile_dim_cols, tile_count, grid_desc = calculate_optimal_grid(
 
 # Log adjustment if needed (grid optimization may change tile count slightly)
 if tile_count != desired_tile_count:
-    ps.environment.update_run_log(
+    safe_update_run_log(
         f"Adjusted tile count from {desired_tile_count} to {tile_count} ({grid_desc}) "
         f"for optimal aspect ratio and even distribution"
     )
 else:
-    ps.environment.update_run_log(f"Using {tile_count} tiles ({grid_desc})")
+    safe_update_run_log(f"Using {tile_count} tiles ({grid_desc})")
 
 # Calculate actual tile dimensions for validation
 tile_height = int(math.ceil(height / tile_dim_rows))
 tile_width = int(math.ceil(width / tile_dim_cols))
 actual_tile_pixels = tile_height * tile_width
 
-# Validate tile size meets minimum requirements
-effective_tile_height = tile_height - (2 * buffer_pixels)
-effective_tile_width = tile_width - (2 * buffer_pixels)
+# Validate tile size meets minimum requirements.
+# Clamp at zero before multiplying: when the buffer is wider than half the tile
+# both dimensions go negative, and multiplying two negatives yields a positive
+# area that looks healthy and suppresses the warning below. A tile whose buffer
+# has consumed it entirely has no effective area at all, not a positive one.
+effective_tile_height_raw = tile_height - (2 * buffer_pixels)
+effective_tile_width_raw = tile_width - (2 * buffer_pixels)
+effective_tile_height = max(0, effective_tile_height_raw)
+effective_tile_width = max(0, effective_tile_width_raw)
 effective_tile_pixels = effective_tile_height * effective_tile_width
 
-ps.environment.update_run_log(
+safe_update_run_log(
     f"Tile dimensions: {tile_width} × {tile_height} pixels ({actual_tile_pixels:,} total)"
 )
-ps.environment.update_run_log(
+safe_update_run_log(
     f"Effective tile dimensions after buffering: {effective_tile_width} × {effective_tile_height} pixels "
     f"({effective_tile_pixels:,} total)"
 )
 
+# The buffer has swallowed the tile: every pixel of this tile is overlap with
+# its neighbours, so it contributes no unique analysis area
+if effective_tile_height_raw <= 0 or effective_tile_width_raw <= 0:
+    safe_update_run_log(
+        f"WARNING: The buffer ({buffer_pixels} px on each side) is at least as large as the tile "
+        f"({tile_width} × {tile_height} px), leaving no effective analysis area "
+        f"(would be {effective_tile_width_raw} × {effective_tile_height_raw} px before clamping). "
+        f"Every tile is entirely overlap, so tiling will be far slower than a single-process run. "
+        f"Reduce the Buffer Multiplier, reduce the tile count, or reduce the radius."
+    )
 # Warn if tiles might be too small
-if effective_tile_pixels < min_tile_pixels:
-    ps.environment.update_run_log(
+elif effective_tile_pixels < min_tile_pixels:
+    safe_update_run_log(
         f"WARNING: Effective tile size ({effective_tile_pixels:,}) is smaller than recommended minimum "
         f"({min_tile_pixels:,}) for block_size={block_size}. Consider reducing buffer or tile count."
     )
 
 safe_progress_bar(message=f"Generating {tile_count}-tile grid", report_type="message")
 
+# Lay out the grid geometry. IDs assigned here are provisional: tiles that turn
+# out to hold no analysis area are dropped below, and the survivors renumbered.
+tile_layout = []
+provisional_id = 1
+for row in range(tile_dim_rows):
+    for col in range(tile_dim_cols):
+        tile_layout.append({
+            "provisional_id": provisional_id,
+            "row_start": row * tile_height,
+            "row_end": min((row + 1) * tile_height, height),
+            "col_start": col * tile_width,
+            "col_end": min((col + 1) * tile_width, width)
+        })
+        provisional_id += 1
+
 # Create grid array initialized to -9999 (NoData)
 grid = np.full((height, width), -9999, dtype=np.int32)
 
-# Assign tile IDs (all tiles will be filled since grid matches tile_count exactly)
-tile_id = 1
-for row in range(tile_dim_rows):
-    for col in range(tile_dim_cols):
-        row_start = row * tile_height
-        row_end = min((row + 1) * tile_height, height)
-        col_start = col * tile_width
-        col_end = min((col + 1) * tile_width, width)
-
-        grid[row_start:row_end, col_start:col_end] = tile_id
-        tile_id += 1
+for tile in tile_layout:
+    grid[tile["row_start"]:tile["row_end"],
+         tile["col_start"]:tile["col_end"]] = tile["provisional_id"]
 
 # Mask to analysis area (set nodata areas to -9999)
 if nodata is not None:
@@ -476,9 +509,59 @@ if nodata is not None:
 else:
     grid[np.isnan(data)] = -9999
 
+# ============================================================================
+# RENUMBER SURVIVING TILES
+# ============================================================================
+# A tile lying entirely in nodata (all ocean, say) disappears from the grid
+# raster when the mask is applied, leaving the remaining IDs with holes in them
+# - 1, 2, 3, 6, 7 rather than 1, 2, 3, 4, 5. SyncroSim then hands out jobs over
+# the tiles that remain, while the manifest still describes the original
+# numbering, so job N stops referring to tile N. Renumbering the survivors
+# contiguously here keeps the grid raster and the manifest describing the same
+# tiles, and keeps the empty tiles out of both.
+
+surviving_ids = set(np.unique(grid).tolist()) - {-9999}
+dropped_ids = [t["provisional_id"] for t in tile_layout
+               if t["provisional_id"] not in surviving_ids]
+
+id_remap = {old_id: new_id for new_id, old_id in enumerate(sorted(surviving_ids), start=1)}
+
+if dropped_ids:
+    remapped_grid = np.full_like(grid, -9999)
+    for old_id, new_id in id_remap.items():
+        remapped_grid[grid == old_id] = new_id
+    grid = remapped_grid
+
+    safe_update_run_log(
+        f"Dropped {len(dropped_ids)} of {tile_count} tiles containing no analysis area "
+        f"(entirely NoData): {', '.join(str(t) for t in dropped_ids)}"
+    )
+
+tiles = [t for t in tile_layout if t["provisional_id"] in id_remap]
+for tile in tiles:
+    tile["tile_id"] = id_remap[tile["provisional_id"]]
+
+tile_count = len(tiles)
+
+if dropped_ids:
+    safe_update_run_log(f"Renumbered surviving tiles contiguously as 1-{tile_count}")
+
 # Save tile grid
 dataPath = os.path.join(wrkDir, f"Scenario-{myScenarioID}")
 os.makedirs(dataPath, exist_ok=True)
+
+# Tiling cannot help if the analysis area only ever reaches one tile
+if tile_count < 2:
+    stale_manifest = os.path.join(dataPath, "OmniscapeTiles", "tile_manifest.json")
+    if os.path.exists(stale_manifest):
+        os.remove(stale_manifest)
+        safe_update_run_log(f"Removed stale tile manifest: {stale_manifest}")
+
+    safe_update_run_log(
+        f"Only {tile_count} tile contains analysis area once NoData is excluded, so there is "
+        "nothing to parallelize. Skipping tile generation. Omniscape will run in single-process mode."
+    )
+    sys.exit(0)
 
 tile_size_k = int(valid_pixels / tile_count / 1000)
 grid_filename = f"smpGrid-{tile_count}-{tile_size_k}K.tif"
@@ -502,8 +585,8 @@ with rasterio.open(
 ) as dst:
     dst.write(grid, 1)
 
-ps.environment.update_run_log(f"Tile grid created: {grid_filename}")
-ps.environment.update_run_log(f"Grid saved to: {grid_path}")
+safe_update_run_log(f"Tile grid created: {grid_filename}")
+safe_update_run_log(f"Grid saved to: {grid_path}")
 
 # Save to core_SpatialMultiprocessing datasheet
 smp_data = pd.DataFrame({
@@ -521,7 +604,7 @@ safe_progress_bar(message="Creating pre-processed tiles", report_type="message")
 # Create tiles directory
 tiles_dir = os.path.join(dataPath, "OmniscapeTiles")
 os.makedirs(tiles_dir, exist_ok=True)
-ps.environment.update_run_log(f"Tiles directory: {tiles_dir}")
+safe_update_run_log(f"Tiles directory: {tiles_dir}")
 
 # Copy grid to tiles directory
 tiles_grid_path = os.path.join(tiles_dir, os.path.basename(grid_path))
@@ -543,37 +626,55 @@ manifest = {
     "tiles": []
 }
 
-# Process each tile
-tile_id = 1
-for row in range(tile_dim_rows):
-    for col in range(tile_dim_cols):
-        safe_progress_bar(
-            message=f"Processing tile {tile_id}/{tile_count}",
-            report_type="message"
+# Process each surviving tile, using the renumbered IDs
+for tile in tiles:
+    tile_id = tile["tile_id"]
+
+    safe_progress_bar(
+        message=f"Processing tile {tile_id}/{tile_count}",
+        report_type="message"
+    )
+
+    # Tile extent, fixed when the layout was built
+    row_start = tile["row_start"]
+    row_end = tile["row_end"]
+    col_start = tile["col_start"]
+    col_end = tile["col_end"]
+
+    tile_pixels = (row_end - row_start) * (col_end - col_start)
+    safe_update_run_log(
+        f"Tile {tile_id}: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}] "
+        f"({tile_pixels:,} pixels)"
+    )
+
+    # Crop and buffer resistance using HYBRID approach
+    tile_resistance_path = os.path.join(tiles_dir, f"tile-{tile_id}-resistance.tif")
+
+    if buffer_pixels > 0:
+        # Use real overlapping data only (no padding beyond raster boundary)
+        safe_update_run_log(f"  Applying {buffer_pixels}-pixel buffer (real overlapping data only)")
+
+        buffered_extent, buffer_info = crop_and_buffer_raster(
+            resistancePath,
+            tile_resistance_path,
+            (row_start, row_end, col_start, col_end),
+            buffer_pixels,
+            width,
+            height,
+            transform,
+            crs
         )
 
-        # Calculate tile extent
-        row_start = row * tile_height
-        row_end = min((row + 1) * tile_height, height)
-        col_start = col * tile_width
-        col_end = min((col + 1) * tile_width, width)
+        safe_update_run_log(f"    Resistance: {buffer_info}")
 
-        tile_pixels = (row_end - row_start) * (col_end - col_start)
-        ps.environment.update_run_log(
-            f"Tile {tile_id}: rows [{row_start}:{row_end}], cols [{col_start}:{col_end}] "
-            f"({tile_pixels:,} pixels)"
-        )
+        # Crop and buffer source (if exists)
+        tile_source_path = None
+        if sourcePath:
+            tile_source_path = os.path.join(tiles_dir, f"tile-{tile_id}-source.tif")
 
-        # Crop and buffer resistance using HYBRID approach
-        tile_resistance_path = os.path.join(tiles_dir, f"tile-{tile_id}-resistance.tif")
-
-        if buffer_pixels > 0:
-            # Use real overlapping data only (no padding beyond raster boundary)
-            ps.environment.update_run_log(f"  Applying {buffer_pixels}-pixel buffer (real overlapping data only)")
-
-            buffered_extent, buffer_info = crop_and_buffer_raster(
-                resistancePath,
-                tile_resistance_path,
+            _, source_buffer_info = crop_and_buffer_raster(
+                sourcePath,
+                tile_source_path,
                 (row_start, row_end, col_start, col_end),
                 buffer_pixels,
                 width,
@@ -582,90 +683,76 @@ for row in range(tile_dim_rows):
                 crs
             )
 
-            ps.environment.update_run_log(f"    Resistance: {buffer_info}")
+            safe_update_run_log(f"    Source: {source_buffer_info}")
+    else:
+        # No buffer - just crop
+        crop_raster_to_extent(
+            resistancePath,
+            tile_resistance_path,
+            (row_start, row_end, col_start, col_end),
+            transform,
+            crs
+        )
 
-            # Crop and buffer source (if exists)
-            tile_source_path = None
-            if sourcePath:
-                tile_source_path = os.path.join(tiles_dir, f"tile-{tile_id}-source.tif")
-
-                _, source_buffer_info = crop_and_buffer_raster(
-                    sourcePath,
-                    tile_source_path,
-                    (row_start, row_end, col_start, col_end),
-                    buffer_pixels,
-                    width,
-                    height,
-                    transform,
-                    crs
-                )
-
-                ps.environment.update_run_log(f"    Source: {source_buffer_info}")
-        else:
-            # No buffer - just crop
+        tile_source_path = None
+        if sourcePath:
+            tile_source_path = os.path.join(tiles_dir, f"tile-{tile_id}-source.tif")
             crop_raster_to_extent(
-                resistancePath,
-                tile_resistance_path,
+                sourcePath,
+                tile_source_path,
                 (row_start, row_end, col_start, col_end),
                 transform,
                 crs
             )
 
-            tile_source_path = None
-            if sourcePath:
-                tile_source_path = os.path.join(tiles_dir, f"tile-{tile_id}-source.tif")
-                crop_raster_to_extent(
-                    sourcePath,
-                    tile_source_path,
-                    (row_start, row_end, col_start, col_end),
-                    transform,
-                    crs
-                )
+        buffered_extent = None
 
-            buffered_extent = None
-
-        # Add to manifest
-        manifest["tiles"].append({
-            "tile_id": tile_id,
-            "resistance_path": tile_resistance_path,
-            "source_path": tile_source_path,
-            "original_extent": {
-                "row_start": row_start, "row_end": row_end,
-                "col_start": col_start, "col_end": col_end
-            },
-            "buffered_extent": buffered_extent,
-            "is_buffered": buffer_pixels > 0
-        })
-
-        tile_id += 1
+    # Add to manifest
+    manifest["tiles"].append({
+        "tile_id": tile_id,
+        "resistance_path": tile_resistance_path,
+        "source_path": tile_source_path,
+        "original_extent": {
+            "row_start": row_start, "row_end": row_end,
+            "col_start": col_start, "col_end": col_end
+        },
+        "buffered_extent": buffered_extent,
+        "is_buffered": buffer_pixels > 0
+    })
 
 # Save manifest
 manifest_path = os.path.join(tiles_dir, "tile_manifest.json")
 with open(manifest_path, 'w') as f:
     json.dump(manifest, f, indent=2)
 
-ps.environment.update_run_log(f"Tile manifest saved: {manifest_path}")
+safe_update_run_log(f"Tile manifest saved: {manifest_path}")
 
 # ============================================================================
 # TILING CONFIGURATION SUMMARY
 # ============================================================================
 
-ps.environment.update_run_log(" ")
-ps.environment.update_run_log("=" * 70)
-ps.environment.update_run_log("TILING CONFIGURATION SUMMARY")
-ps.environment.update_run_log("=" * 70)
-ps.environment.update_run_log(f"Raster: {width} × {height} pixels ({valid_pixels:,} valid)")
-ps.environment.update_run_log(" ")
-ps.environment.update_run_log("Tile Configuration:")
-ps.environment.update_run_log(f"  Grid layout:           {grid_desc} = {tile_count} tiles")
-ps.environment.update_run_log(f"  Tile dimensions:       {tile_width} × {tile_height} pixels")
-ps.environment.update_run_log(f"  Buffer applied:        {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius)")
-ps.environment.update_run_log(f"  Effective tile size:   {effective_tile_width} × {effective_tile_height} pixels")
-ps.environment.update_run_log(" ")
-ps.environment.update_run_log("Parallelization:")
-ps.environment.update_run_log(f"  Available cores:       {available_cores}")
-ps.environment.update_run_log(f"  Intensity setting:     {intensity}")
-ps.environment.update_run_log(f"  Simultaneous tiles:    {min(tile_count, available_cores)}")
+safe_update_run_log(" ")
+safe_update_run_log("=" * 70)
+safe_update_run_log("TILING CONFIGURATION SUMMARY")
+safe_update_run_log("=" * 70)
+safe_update_run_log(f"Raster: {width} × {height} pixels ({valid_pixels:,} valid)")
+safe_update_run_log(" ")
+safe_update_run_log("Tile Configuration:")
+if dropped_ids:
+    safe_update_run_log(
+        f"  Grid layout:           {grid_desc}, {len(dropped_ids)} empty tiles dropped "
+        f"= {tile_count} tiles"
+    )
+else:
+    safe_update_run_log(f"  Grid layout:           {grid_desc} = {tile_count} tiles")
+safe_update_run_log(f"  Tile dimensions:       {tile_width} × {tile_height} pixels")
+safe_update_run_log(f"  Buffer applied:        {buffer_pixels} pixels ({buffer_multiplier:.1f}× radius)")
+safe_update_run_log(f"  Effective tile size:   {effective_tile_width} × {effective_tile_height} pixels")
+safe_update_run_log(" ")
+safe_update_run_log("Parallelization:")
+safe_update_run_log(f"  Available cores:       {available_cores}")
+safe_update_run_log(f"  Intensity setting:     {intensity}")
+safe_update_run_log(f"  Simultaneous tiles:    {min(tile_count, available_cores)}")
 
 # Calculate estimated speedup
 # Account for overhead and diminishing returns
@@ -674,8 +761,8 @@ ideal_speedup = available_cores
 overhead_factor = 0.85  # 15% overhead for I/O, merging, etc.
 actual_speedup = min(tile_count, ideal_speedup) * overhead_factor
 
-ps.environment.update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
-ps.environment.update_run_log(" ")
+safe_update_run_log(f"  Estimated speedup:     {actual_speedup:.1f}× vs single-core")
+safe_update_run_log(" ")
 
 # Memory estimates with Julia threading consideration
 try:
@@ -684,7 +771,7 @@ try:
     available_ram_mb = ramGB * 1024
     ram_available = True
 except ImportError:
-    ps.environment.update_run_log("WARNING: psutil not available, cannot check system RAM")
+    safe_update_run_log("WARNING: psutil not available, cannot check system RAM")
     ramGB = 0
     available_ram_mb = 0
     ram_available = False
@@ -696,10 +783,10 @@ except ImportError:
 max_concurrent_jobs = min(tile_count, available_cores)
 estimated_julia_workers_per_tile = max(1, min(available_cores // max_concurrent_jobs, 2))
 
-ps.environment.update_run_log("Parallelization Strategy:")
-ps.environment.update_run_log(f"  Concurrent tiles:      Up to {max_concurrent_jobs} (limited by MaximumJobs={available_cores})")
-ps.environment.update_run_log(f"  Julia threads/tile:    {estimated_julia_workers_per_tile} (hierarchical: prioritize tile parallelism)")
-ps.environment.update_run_log(f"  Total thread usage:    {max_concurrent_jobs * estimated_julia_workers_per_tile} threads")
+safe_update_run_log("Parallelization Strategy:")
+safe_update_run_log(f"  Concurrent tiles:      Up to {max_concurrent_jobs} (limited by MaximumJobs={available_cores})")
+safe_update_run_log(f"  Julia threads/tile:    {estimated_julia_workers_per_tile} (hierarchical: prioritize tile parallelism)")
+safe_update_run_log(f"  Total thread usage:    {max_concurrent_jobs * estimated_julia_workers_per_tile} threads")
 
 # RAM estimate: threads × RAM per thread
 estimated_ram_per_tile_mb = estimated_julia_workers_per_tile * ram_per_thread_gb * 1024
@@ -707,27 +794,27 @@ estimated_ram_per_tile_mb = estimated_julia_workers_per_tile * ram_per_thread_gb
 # Peak RAM depends on how many tiles run simultaneously
 estimated_peak_ram_mb = estimated_ram_per_tile_mb * max_concurrent_jobs
 
-ps.environment.update_run_log(" ")
-ps.environment.update_run_log("Memory Estimates:")
+safe_update_run_log(" ")
+safe_update_run_log("Memory Estimates:")
 if ram_available:
-    ps.environment.update_run_log(f"  Available RAM:         {ramGB:.1f} GB ({available_ram_mb:.0f} MB)")
-ps.environment.update_run_log(f"  Per tile (estimated):  ~{estimated_ram_per_tile_mb:.0f} MB ({estimated_julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread)")
-ps.environment.update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({max_concurrent_jobs} tiles simultaneously)")
+    safe_update_run_log(f"  Available RAM:         {ramGB:.1f} GB ({available_ram_mb:.0f} MB)")
+safe_update_run_log(f"  Per tile (estimated):  ~{estimated_ram_per_tile_mb:.0f} MB ({estimated_julia_workers_per_tile} threads × {ram_per_thread_gb} GB/thread)")
+safe_update_run_log(f"  Peak (estimated):      ~{estimated_peak_ram_mb:.0f} MB ({max_concurrent_jobs} tiles simultaneously)")
 
 # Warning if estimated usage exceeds available RAM
 if ram_available and estimated_peak_ram_mb > available_ram_mb:
-    ps.environment.update_run_log(" ")
-    ps.environment.update_run_log("WARNING: Estimated memory usage exceeds available RAM!")
-    ps.environment.update_run_log(f"  Estimated peak: {estimated_peak_ram_mb:.0f} MB")
-    ps.environment.update_run_log(f"  Available RAM:  {available_ram_mb:.0f} MB")
-    ps.environment.update_run_log(f"  Recommendations:")
+    safe_update_run_log(" ")
+    safe_update_run_log("WARNING: Estimated memory usage exceeds available RAM!")
+    safe_update_run_log(f"  Estimated peak: {estimated_peak_ram_mb:.0f} MB")
+    safe_update_run_log(f"  Available RAM:  {available_ram_mb:.0f} MB")
+    safe_update_run_log(f"  Recommendations:")
     recommended_cores = max(1, int(available_ram_mb / estimated_ram_per_tile_mb))
-    ps.environment.update_run_log(f"    - Reduce MaximumJobs to {recommended_cores} or lower")
-    ps.environment.update_run_log(f"    - Reduce RamPerThreadGB if estimate is too conservative")
-    ps.environment.update_run_log(f"    - Current estimate assumes {estimated_julia_workers_per_tile} Julia threads per tile")
+    safe_update_run_log(f"    - Reduce MaximumJobs to {recommended_cores} or lower")
+    safe_update_run_log(f"    - Reduce RamPerThreadGB if estimate is too conservative")
+    safe_update_run_log(f"    - Current estimate assumes {estimated_julia_workers_per_tile} Julia threads per tile")
 
-ps.environment.update_run_log("=" * 70)
-ps.environment.update_run_log(" ")
+safe_update_run_log("=" * 70)
+safe_update_run_log(" ")
 
 safe_progress_bar(message="PrepMultiprocessing complete", report_type="message")
-ps.environment.update_run_log("PrepMultiprocessing => Complete")
+safe_update_run_log("PrepMultiprocessing => Complete")
