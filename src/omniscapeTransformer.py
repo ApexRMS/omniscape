@@ -516,10 +516,6 @@ else:
 # Prepare Julia executable
 jlExe = juliaConfig.ExePath.item()
 
-if ' ' in dataPath:
-    sys.exit("Due to julia requirements, the path to the SyncroSim Library may not contain any spaces.")
-
-
 # ============================================================================
 # DETECT JULIA VERSION (Julia 1.12+ needs a threading workaround)
 # ============================================================================
