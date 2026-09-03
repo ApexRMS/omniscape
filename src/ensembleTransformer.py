@@ -227,17 +227,31 @@ myParentScenario.save_datasheet(name = "omniscape_outputSpatialEnsemble", data =
 pixelArea = abs(referenceRaster.res[0] * referenceRaster.res[1])
 validCount = int((~ensembleMask).sum())
 
-outputTabularEnsemble = myScenario.datasheets(name = "omniscape_outputTabularEnsemble")
+summaryRows = []
 
 for breakRow in breaksTable.itertuples():
     classCount = int((classRaster == breakRow.classID).sum())
     movementTypesId = int(movementTypeClasses.movementTypesId[
         movementTypeClasses.classID == breakRow.classID].iloc[0])
-    outputTabularEnsemble.loc[len(outputTabularEnsemble.index)] = [
-        movementTypesId,
-        float(breakRow.minQuantile), float(breakRow.maxQuantile),
-        float(breakRow.minBreakValue), float(breakRow.maxBreakValue),
-        (classCount * pixelArea) / 10000,
-        (classCount / validCount) if validCount > 0 else 0.0]
+    summaryRows.append({
+        "movementTypesID": movementTypesId,
+        "minQuantile": float(breakRow.minQuantile),
+        "maxQuantile": float(breakRow.maxQuantile),
+        "minBreakValue": float(breakRow.minBreakValue),
+        "maxBreakValue": float(breakRow.maxBreakValue),
+        "amountArea": (classCount * pixelArea) / 10000,
+        "percentCover": (classCount / validCount) if validCount > 0 else 0.0})
+
+outputTabularEnsemble = pd.DataFrame(summaryRows)
+
+# The category reference must stay an integer. Assigning a whole row positionally
+# (df.loc[n] = [...]) coerces every column in that row to float, which submits the
+# category as "16.0" rather than "16"; SyncroSim then cannot match it against the
+# Connectivity Categories list and rejects the save. Building the frame column-wise
+# and pinning the dtype keeps it an integer, matching how the Connectivity
+# Categories transformer writes its own summary.
+if not outputTabularEnsemble.empty:
+    outputTabularEnsemble["movementTypesID"] = \
+        outputTabularEnsemble["movementTypesID"].astype("int64")
 
 myParentScenario.save_datasheet(name = "omniscape_outputTabularEnsemble", data = outputTabularEnsemble)
