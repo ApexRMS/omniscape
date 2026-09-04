@@ -94,10 +94,14 @@
           <column name="condition2FutureFile" displayName="Condition 2 future file" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" isOptional="True" />
       </dataSheet>
 
+      <dataSheet name="reclassificationOptions" displayName="Options" isSingleRow="True">
+          <column name="thresholdType" displayName="Threshold type" dataType="Integer" validationType="List" formula1="0:Value|1:Quantile" isOptional="True" defaultValue="0" description="How the Category Thresholds are interpreted. Value: compared directly against the raster. Quantile: treated as proportions (0-1) of the value distribution, with the break values computed from this run - use when the range of the surface is not known ahead of time, such as an ensemble." />
+      </dataSheet>
+
       <dataSheet name="reclassificationThresholds" displayName="Category Thresholds">
           <column name="movementType" displayName="Connectivity category" dataType="Integer" validationType="Datasheet" formula1="movementTypes" />
-          <column name="minValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="maxValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" />
+          <column name="minValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" description="Lower bound of this category. A raw raster value, or a quantile between 0 and 1, according to Threshold type." />
+          <column name="maxValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" description="Upper bound of this category. A raw raster value, or a quantile between 0 and 1, according to Threshold type." />
       </dataSheet>
 
       <dataSheet name="outputSpatial" displayName="Omniscape Outputs" isSingleRow="True">
@@ -114,6 +118,8 @@
 
       <dataSheet name="outputTabularReclassification" displayName="Connectivity Categories Summary">
           <column name="movementTypesID" displayName="Connectivity category" dataType="Integer" validationType="Datasheet" formula1="movementTypes" allowDbNull="False" />
+          <column name="minBreakValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Lower bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
+          <column name="maxBreakValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Upper bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
           <column name="amountArea" displayName="Area" dataType="Double" validationType="Decimal" validationCondition="None" />
           <column name="percentCover" displayName="Percent cover" dataType="Double" validationType="Decimal" validationCondition="None" />
       </dataSheet>
@@ -131,25 +137,8 @@
           <column name="Description" dataType="String" isOptional="True" />
       </dataSheet>
 
-      <dataSheet name="ensembleThresholds" displayName="Ensemble Category Thresholds">
-          <column name="movementType" displayName="Connectivity category" dataType="Integer" validationType="Datasheet" formula1="movementTypes" allowDbNull="False" />
-          <column name="minQuantile" displayName="Minimum quantile" dataType="Double" validationType="Decimal" validationCondition="Between" formula1="0" formula2="1" allowDbNull="False" description="Lower quantile (0-1) of the ensemble value distribution for this category." />
-          <column name="maxQuantile" displayName="Maximum quantile" dataType="Double" validationType="Decimal" validationCondition="Between" formula1="0" formula2="1" allowDbNull="False" description="Upper quantile (0-1) of the ensemble value distribution for this category." />
-      </dataSheet>
-
       <dataSheet name="outputSpatialEnsemble" displayName="Ensemble" isSingleRow="True">
           <column name="ensembleRaster" displayName="Ensemble connectivity" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
-          <column name="ensembleCategoryRaster" displayName="Ensemble categories" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
-      </dataSheet>
-
-      <dataSheet name="outputTabularEnsemble" displayName="Ensemble Categories Summary">
-          <column name="movementTypesID" displayName="Connectivity category" dataType="Integer" validationType="Datasheet" formula1="movementTypes" allowDbNull="False" />
-          <column name="minQuantile" displayName="Minimum quantile" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="maxQuantile" displayName="Maximum quantile" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="minBreakValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" description="Ensemble value at the minimum quantile, computed from this run's distribution." />
-          <column name="maxBreakValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" description="Ensemble value at the maximum quantile, computed from this run's distribution." />
-          <column name="amountArea" displayName="Area (ha)" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="percentCover" displayName="Proportion of valid area" dataType="Double" validationType="Decimal" validationCondition="None" />
       </dataSheet>
 
     <transformer
@@ -194,23 +183,8 @@
     </transformer>
 
     <transformer
-      name="movementCategoriesTransformer"
-      displayName="2 - Categorize Connectivity Output"
-      transformerSpecificOutput="False"
-      isRunnable="True"
-      programName="python"
-      programArguments="movementCategoriesTransformer.py"
-      condaEnv="omniscapeEnvironment.yml"
-      condaEnvVersion="3.5">
-        <dataSheet name="reclassificationThresholds" type="Input" />
-        <dataSheet name="outputTabularReclassification" type="Output" />
-        <dataSheet name="outputSpatialMovement" type="Output" />
-        <dataSheet name="outputSpatial" type="Input" />
-    </transformer>
-
-    <transformer
       name="ensembleTransformer"
-      displayName="3 - Ensemble Connectivity"
+      displayName="1.5 - Ensemble Connectivity"
       transformerSpecificOutput="False"
       isRunnable="True"
       programName="python"
@@ -220,9 +194,24 @@
       isMultiprocessing="False">
         <dataSheet name="ensembleOptions" type="Input" />
         <dataSheet name="ensembleWeights" type="Input" />
-        <dataSheet name="ensembleThresholds" type="Input" />
         <dataSheet name="outputSpatialEnsemble" type="Output" />
-        <dataSheet name="outputTabularEnsemble" type="Output" />
+    </transformer>
+
+    <transformer
+      name="movementCategoriesTransformer"
+      displayName="2 - Categorize Connectivity Output"
+      transformerSpecificOutput="False"
+      isRunnable="True"
+      programName="python"
+      programArguments="movementCategoriesTransformer.py"
+      condaEnv="omniscapeEnvironment.yml"
+      condaEnvVersion="3.5">
+        <dataSheet name="reclassificationOptions" type="Input" />
+        <dataSheet name="reclassificationThresholds" type="Input" />
+        <dataSheet name="outputTabularReclassification" type="Output" />
+        <dataSheet name="outputSpatialMovement" type="Output" />
+        <dataSheet name="outputSpatial" type="Input" />
+        <dataSheet name="outputSpatialEnsemble" type="Input" />
     </transformer>
 
     <layout type="Project">
@@ -251,23 +240,22 @@
           <item name="FutureConditions" />
         </group>
       </group>
-      <group name="Advanced" displayName="Advanced">
-        <item name="reclassificationThresholds" />
-      </group>
       <group name="Ensemble0Connectivity" displayName="Ensemble Connectivity">
         <item name="ensembleOptions" />
         <item name="ensembleWeights" />
-        <item name="ensembleThresholds" />
+      </group>
+      <group name="Advanced" displayName="Advanced">
+        <item name="reclassificationOptions" />
+        <item name="reclassificationThresholds" />
       </group>
       <group name="Results" displayName="Results">
         <group name="Spatial" displayName="Spatial">
           <item name="outputSpatial" />
-          <item name="outputSpatialMovement" />
           <item name="outputSpatialEnsemble" />
+          <item name="outputSpatialMovement" />
         </group>
         <group name="Tabular" displayName="Tabular">
           <item name="outputTabularReclassification" />
-          <item name="outputTabularEnsemble" />
         </group>
       </group>
     </layout>
@@ -276,10 +264,6 @@
       <group name="Connectivitycategories" displayName="Connectivity categories">
         <item name="outputTabularReclassificationAmountArea" displayName="Area (ha)" dataSheet="outputTabularReclassification" column="amountArea" filter="movementTypesID" prefixFolderName="False" />
         <item name="outputTabularReclassificationPercentCover" displayName="Percent cover" dataSheet="outputTabularReclassification" column="percentCover" filter="movementTypesID" prefixFolderName="False" />
-      </group>
-      <group name="EnsembleConnectivity" displayName="Ensemble connectivity">
-        <item name="outputTabularEnsembleamountArea" displayName="Area (ha)" dataSheet="outputTabularEnsemble" column="amountArea" filter="movementTypesID" prefixFolderName="False" />
-        <item name="outputTabularEnsemblepercentCover" displayName="Proportion of valid area" dataSheet="outputTabularEnsemble" column="percentCover" filter="movementTypesID" prefixFolderName="False" />
       </group>
     </layout>
 
@@ -293,9 +277,8 @@
         <item name="outputSpatialCumCurrmap" displayName="Cumulative current flow" dataSheet="outputSpatial" column="cumCurrmap" />
         <item name="outputSpatialFlowPotential" displayName="Flow potential" dataSheet="outputSpatial" column="flowPotential" />
         <item name="outputSpatialNormalizedCumCurrmap" displayName="Normalized current flow" dataSheet="outputSpatial" column="normalizedCumCurrmap" />
-        <item name="outputSpatialMovementMovementTypes" displayName="Connectivity categories" dataSheet="outputSpatialMovement" column="movementTypes" />
         <item name="outputSpatialEnsembleensembleRaster" displayName="Ensemble connectivity" dataSheet="outputSpatialEnsemble" column="ensembleRaster" />
-        <item name="outputSpatialEnsembleensembleCategoryRaster" displayName="Ensemble categories" dataSheet="outputSpatialEnsemble" column="ensembleCategoryRaster" />
+        <item name="outputSpatialMovementMovementTypes" displayName="Connectivity categories" dataSheet="outputSpatialMovement" column="movementTypes" />
       </group>
     </layout>
 

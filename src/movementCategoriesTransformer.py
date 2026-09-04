@@ -1,17 +1,31 @@
 ## omniscape
 
-# Connectivity Categories transformer 
+# Connectivity Categories transformer
+#
+# Slices a connectivity surface into the Project's connectivity categories.
+#
+# The surface is whichever of these the Scenario has produced:
+#   - the ensemble raster, when 'Ensemble Connectivity' ran earlier in the
+#     pipeline, or
+#   - the normalized current map from 'Omniscape' otherwise.
+#
+# Categories are defined either against fixed raster values (the default) or by
+# quantile, in which case the break values are computed from this run's own
+# distribution. Quantiles suit a surface whose range is not known ahead of time
+# - a combined ensemble, for instance, whose values depend on how many
+# Scenarios went into it and how they were weighted.
 
 # Set up -----------------------------------------------------------------------
 
-from osgeo import gdal
 import pysyncrosim as ps
 import pandas as pd
 import os
 import sys
 import rasterio
-import numpy as np
-from helperFunctions import safe_progress_bar
+
+from helperFunctions import (NODATA_VALUE, safe_progress_bar, safe_update_run_log,
+                             nodata_mask, resolve_list_option, validate_threshold_bands,
+                             classify_by_quantiles, classify_by_values)
 
 safe_progress_bar(message = "Setting up Scenario", report_type = "message")
 
@@ -38,20 +52,59 @@ if os.path.exists(outputMovementPath) == False:
     os.makedirs(outputMovementPath)
 
 
-# Load input and output datasheet from the SyncroSim Library ------------------- 
+# Load input and output datasheet from the SyncroSim Library -------------------
 
-myInput = myScenario.datasheets(name = "omniscape_outputSpatial", show_full_paths = True)
+omniscapeOutput = myScenario.datasheets(name = "omniscape_outputSpatial", show_full_paths = True)
+ensembleOutput = myScenario.datasheets(name = "omniscape_outputSpatialEnsemble", show_full_paths = True)
 movementTypeClasses = myProject.datasheets(name = "omniscape_movementTypes", include_key = True)
+reclassificationOptions = myScenario.datasheets(name = "omniscape_reclassificationOptions")
 reclassificationThresholds = myScenario.datasheets(name = "omniscape_reclassificationThresholds")
-TabularReclassification = myScenario.datasheets(name = "omniscape_outputTabularReclassification")
 myOutput = myScenario.datasheets(name = "omniscape_outputSpatialMovement", show_full_paths = True)
 
 
+# Choose which surface to categorize -------------------------------------------
+
+def firstValue(datasheet, column):
+    """Return a populated value from a single-row output datasheet, or None."""
+    if datasheet.empty or column not in datasheet.columns:
+        return None
+    value = datasheet[column].iloc[0]
+    if value != value or value is None:      # NaN
+        return None
+    return value
+
+
+ensemblePath = firstValue(ensembleOutput, "ensembleRaster")
+normalizedPath = firstValue(omniscapeOutput, "normalizedCumCurrmap")
+
+# The ensemble wins when both exist: an ensemble Scenario is asking for its
+# combined surface to be classified, not whatever single-Scenario output may
+# also be sitting in the same Scenario
+if ensemblePath is not None:
+    inputPath = ensemblePath
+    inputLabel = "Ensemble connectivity"
+elif normalizedPath is not None:
+    inputPath = normalizedPath
+    inputLabel = "Normalized current"
+else:
+    sys.exit(
+        "'Categorize Connectivity Output' was added to the pipeline, so it needs a surface "
+        "to categorize. Run 'Omniscape' earlier in the pipeline to produce a 'Normalized "
+        "current' raster, or 'Ensemble Connectivity' to produce an ensemble raster.")
+
+
+# Resolve options ---------------------------------------------------------------
+
+THRESHOLD_TYPE_NAMES = {0: "Value", 1: "Quantile"}
+
+if reclassificationOptions.empty:
+    thresholdType = "Value"
+else:
+    thresholdType = resolve_list_option(
+        reclassificationOptions.thresholdType.item(), THRESHOLD_TYPE_NAMES, "Value")
+
 
 # Validation -------------------------------------------------------------------
-
-if myInput.normalizedCumCurrmap.item() != myInput.normalizedCumCurrmap.item():
-    sys.exit("'Categorize Connectivity Output' was added to the pipeline. Therefore, a 'Normalized current' raster is required.")
 
 if movementTypeClasses.empty:
     sys.exit("'Categorize Connectivity Output' was added to the pipeline. Therefore, the 'Connectivity Categories' datasheet is required.")
@@ -59,50 +112,92 @@ if movementTypeClasses.empty:
 if reclassificationThresholds.empty:
     sys.exit("'Categorize Connectivity Output' was added to the pipeline. Therefore, the 'Category Thresholds' datasheet is required.")
 
+# Quantiles are proportions of the distribution, so they are bounded by 0 and 1;
+# raw values are bounded only by the raster itself
+if thresholdType == "Quantile":
+    validate_threshold_bands(reclassificationThresholds, "minValue", "maxValue",
+                             "Category Thresholds", lower_limit = 0.0, upper_limit = 1.0)
+else:
+    validate_threshold_bands(reclassificationThresholds, "minValue", "maxValue",
+                             "Category Thresholds")
+
+# Attach classIDs to the threshold rows through the Project's category
+# vocabulary. Matching by name rather than by row position matters: the two
+# datasheets are independently ordered, so pairing them positionally silently
+# assigns the wrong category whenever their orders differ.
+thresholdTable = reclassificationThresholds.merge(
+    movementTypeClasses[["movementTypesId", "Name", "classID"]],
+    left_on = "movementType", right_on = "Name", how = "left", validate = "many_to_one")
+
+if thresholdTable.classID.isna().any():
+    unknown = thresholdTable[thresholdTable.classID.isna()].movementType.tolist()
+    sys.exit("'Category Thresholds' references unknown connectivity categories: "
+             + ", ".join(repr(u) for u in unknown) + ".")
 
 
 # Categorize connectivity output ----------------------------------------------------------------
 
 safe_progress_bar(message = "Categorizing connectivity output", report_type = "message")
 
-normCurr = rasterio.open(myInput.normalizedCumCurrmap.item())
-data = normCurr.read()
-reclassRaster = data.copy()
+safe_update_run_log(
+    "Categorizing '" + inputLabel + "' (" + os.path.basename(str(inputPath)) + ") "
+    "using " + thresholdType.lower() + " thresholds.")
 
-for i in reclassificationThresholds.index:
-    reclassRaster[np.where((data >= reclassificationThresholds['minValue'][i]) & (data < reclassificationThresholds['maxValue'][i]))] = movementTypeClasses['classID'][i]
+inputRaster = rasterio.open(inputPath)
+data = inputRaster.read(1).astype(float)
+mask = nodata_mask(inputRaster, data)
 
-outMeta = normCurr.meta
-outMeta.update(dtype = "int16")
-with rasterio.open(
-    os.path.join(outputMovementPath, "connectivity_categories.tif"), 
-    mode="w", **outMeta) as outputRaster:
-    outputRaster.write(reclassRaster)
+if thresholdType == "Quantile":
+    # Rename so the shared classifier sees the quantile columns it expects
+    quantileTable = thresholdTable.rename(
+        columns = {"minValue": "minQuantile", "maxValue": "maxQuantile"})
+    reclassRaster, breaksTable = classify_by_quantiles(data, mask, quantileTable)
+else:
+    reclassRaster, breaksTable = classify_by_values(data, mask, thresholdTable)
 
-myOutput.movementTypes = pd.Series(os.path.join(outputMovementPath, "connectivity_categories.tif"))
+outMeta = inputRaster.meta.copy()
+outMeta.update(count = 1, dtype = "int16", nodata = NODATA_VALUE)
 
-unique, counts = np.unique(reclassRaster, return_counts = True)
-unique = pd.DataFrame(unique)
-unique[0] = unique[0].astype(int)
-freq = pd.DataFrame(counts)
-uniqueFreq = pd.concat([unique, freq], axis = 1, ignore_index = True)
-movementFreq = uniqueFreq[(uniqueFreq[0].isin(movementTypeClasses.classID))]
-movementFreq = movementFreq.rename(columns = {0: "classID", 1:"freq"})
+categoriesPath = os.path.join(outputMovementPath, "connectivity_categories.tif")
+with rasterio.open(categoriesPath, mode = "w", **outMeta) as outputRaster:
+    outputRaster.write(reclassRaster.astype("int16"), 1)
 
-movementTypesFreq = pd.merge(right = movementFreq, left = movementTypeClasses)
+myOutput.movementTypes = pd.Series(categoriesPath)
 
-percentCover = movementTypesFreq.freq/movementTypesFreq.freq.sum()
-amountArea = (movementTypesFreq.freq * normCurr.res[1] * normCurr.res[1])/10000
 
-tabularMovementTypes = pd.concat([movementTypesFreq.movementTypesId, amountArea, percentCover], axis = 1, ignore_index = True)
-myTabularOutput = tabularMovementTypes.rename(columns = {0: "movementTypesID", 1:"amountArea", 2:"percentCover"})
+# Save tabular output ----------------------------------------------------------------
+
+# Per category: the break values actually used (computed from this run's
+# distribution in quantile mode, taken straight from the datasheet otherwise),
+# plus the resulting area and share of valid pixels
+pixelArea = abs(inputRaster.res[0] * inputRaster.res[1])
+validCount = int((~mask).sum())
+
+summaryRows = []
+
+for breakRow in breaksTable.itertuples():
+    classCount = int((reclassRaster == breakRow.classID).sum())
+    movementTypesId = int(movementTypeClasses.movementTypesId[
+        movementTypeClasses.classID == breakRow.classID].iloc[0])
+    summaryRows.append({
+        "movementTypesID": movementTypesId,
+        "minBreakValue": float(breakRow.minBreakValue),
+        "maxBreakValue": float(breakRow.maxBreakValue),
+        "amountArea": (classCount * pixelArea) / 10000,
+        "percentCover": (classCount / validCount) if validCount > 0 else 0.0})
+
+myTabularOutput = pd.DataFrame(summaryRows)
+
+# The category reference must stay an integer. Assigning a whole row positionally
+# (df.loc[n] = [...]) coerces every column in that row to float, which submits the
+# category as "16.0" rather than "16"; SyncroSim then cannot match it against the
+# Connectivity Categories list and rejects the save.
+if not myTabularOutput.empty:
+    myTabularOutput["movementTypesID"] = myTabularOutput["movementTypesID"].astype("int64")
 
 myParentScenario.save_datasheet(name = "omniscape_outputTabularReclassification", data = myTabularOutput)
-
 
 
 # Save outputs to SyncroSim ---------------------------------------------------------------------
 
 myParentScenario.save_datasheet(name = "omniscape_outputSpatialMovement", data = myOutput)
-
-

@@ -1,63 +1,27 @@
 ## omniscape
 
-# Helper functions for the Ensemble Connectivity transformer.
+# Helper functions specific to the Ensemble Connectivity transformer: reading
+# the dependency Scenarios, putting them on a common scale, and combining them.
 #
-# Kept separate from helperFunctions.py (which serves the tiling and
-# resistance-modifier machinery) so the ensemble feature is self-contained.
+# Anything the ensemble shares with the rest of the package - the no-data
+# convention, the run-log wrapper, classification - lives in helperFunctions.py
+# and is re-exported here so importers do not need to know which module a
+# given helper came from.
 
-import pysyncrosim as ps
-import pandas as pd
 import numpy as np
 import sys
 
-# Value used throughout omniscape to flag "no data"
-NODATA_VALUE = -9999
+from helperFunctions import NODATA_VALUE, nodata_mask, safe_update_run_log
+
+# Re-exported for the transformer's benefit; referenced here so linters do not
+# read them as unused imports
+_REEXPORTED = (NODATA_VALUE, nodata_mask, safe_update_run_log)
 
 # How closely two rasters must be aligned before they can be combined, as a
 # fraction of one pixel. Loose enough to tolerate floating-point differences
 # between a raster merged from spatial tiles and one written in a single pass,
 # tight enough that a genuine offset of even one pixel is rejected.
 GRID_TOLERANCE_FRACTION = 0.01
-
-
-def safe_update_run_log(*message, sep = "", type = "status"):
-    """Write to the SyncroSim run log, falling back to the console.
-
-    ps.environment.update_run_log raises RuntimeError when the SSIM_*
-    environment variables are absent (any run outside SyncroSim), so wrapping
-    it lets the transformer be run and debugged standalone.
-    """
-    try:
-        ps.environment.update_run_log(*message, sep = sep, type = type)
-    except RuntimeError:
-        print("[Run log] " + sep.join(str(m) for m in message))
-
-
-def nodata_mask(raster_source, raster_data):
-    """Return a boolean array that is True wherever a pixel holds no valid data.
-
-    A raster can flag "no data" in more than one way depending on which
-    omniscape code path produced it: a sentinel declared in the file header
-    (normally -9999), NaN with no declared sentinel (what spatial tiling
-    produces when a tile carries no declared nodata), or -9999 present in the
-    pixels but undeclared. All three are tested. Testing for -9999
-    unconditionally is safe here: normalized current is a ratio, so -9999 is
-    never a legitimate value.
-    """
-    mask = np.zeros(raster_data.shape, dtype = bool)
-
-    if raster_source.nodata is not None:
-        if np.isnan(raster_source.nodata):
-            mask |= np.isnan(raster_data)
-        else:
-            mask |= (raster_data == raster_source.nodata)
-
-    if np.issubdtype(raster_data.dtype, np.floating):
-        mask |= np.isnan(raster_data)
-
-    mask |= (raster_data == NODATA_VALUE)
-
-    return mask
 
 
 def validate_same_grid(base_source, altr_source, raster_label):
@@ -211,55 +175,6 @@ def combine_layers(layer_stack, mask_stack, weights, method):
 
     ensemble = np.where(any_valid, ensemble, np.nan)
     return ensemble, ~any_valid
-
-
-def classify_by_quantiles(ensemble_data, mask, quantile_table):
-    """Classify an ensemble raster into categories using quantile thresholds.
-
-    quantile_table has one row per category with columns classID, minQuantile
-    and maxQuantile (each between 0 and 1). The break VALUES are computed from
-    the distribution of valid ensemble pixels, so the categories adapt to
-    whatever range the ensemble happens to occupy - the quantile analogue of
-    the fixed-value 'Category Thresholds'.
-
-    Intervals are half-open [min, max), except that a maxQuantile of 1 is
-    closed so the single largest pixel is not left unclassified. Pixels falling
-    in no interval are no-data in the output.
-
-    Returns (class_raster, breaks_table) where breaks_table adds the computed
-    minBreakValue / maxBreakValue per category.
-    """
-    valid = ensemble_data[~mask]
-
-    if valid.size == 0:
-        sys.exit("The ensemble raster contains no valid pixels to classify.")
-
-    class_raster = np.full(ensemble_data.shape, NODATA_VALUE, dtype = np.int16)
-    break_rows = []
-
-    for row in quantile_table.itertuples():
-        if not (0.0 <= row.minQuantile < row.maxQuantile <= 1.0):
-            sys.exit(
-                "Invalid quantile range for category ID " + repr(int(row.classID))
-                + ": minimum " + repr(row.minQuantile) + ", maximum "
-                + repr(row.maxQuantile) + ". Quantiles must satisfy "
-                "0 <= minimum < maximum <= 1.")
-
-        lo = float(np.quantile(valid, row.minQuantile))
-        hi = float(np.quantile(valid, row.maxQuantile))
-
-        if row.maxQuantile >= 1.0:
-            selected = (ensemble_data >= lo) & (ensemble_data <= hi) & ~mask
-        else:
-            selected = (ensemble_data >= lo) & (ensemble_data < hi) & ~mask
-
-        class_raster[selected] = int(row.classID)
-        break_rows.append({"classID": int(row.classID),
-                           "minQuantile": float(row.minQuantile),
-                           "maxQuantile": float(row.maxQuantile),
-                           "minBreakValue": lo, "maxBreakValue": hi})
-
-    return class_raster, pd.DataFrame(break_rows)
 
 
 def resolve_ensemble_weights(dependency_table, weights_table):

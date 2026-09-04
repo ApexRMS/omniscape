@@ -5,11 +5,17 @@ Handles tiling, buffering, and raster processing operations.
 
 import os
 import re
+import sys
 import json
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.windows import Window
 import pysyncrosim as ps
+
+
+# Value used throughout omniscape to flag "no data"
+NODATA_VALUE = -9999
 
 
 # ============================================================================
@@ -50,6 +56,189 @@ def safe_update_run_log(message):
         ps.environment.update_run_log(message)
     except RuntimeError:
         print(f"[Run log] {message}")
+
+
+# ============================================================================
+# NO-DATA HANDLING
+# ============================================================================
+
+def nodata_mask(raster_source, raster_data):
+    """Return a boolean array that is True wherever a pixel holds no valid data.
+
+    A raster can flag "no data" in more than one way depending on which
+    omniscape code path produced it: a sentinel declared in the file header
+    (normally -9999), NaN with no declared sentinel (what spatial tiling
+    produces when a tile carries no declared nodata), or -9999 present in the
+    pixels but undeclared. All three are tested.
+    """
+    mask = np.zeros(raster_data.shape, dtype=bool)
+
+    if raster_source.nodata is not None:
+        if np.isnan(raster_source.nodata):
+            mask |= np.isnan(raster_data)
+        else:
+            mask |= (raster_data == raster_source.nodata)
+
+    if np.issubdtype(raster_data.dtype, np.floating):
+        mask |= np.isnan(raster_data)
+
+    mask |= (raster_data == NODATA_VALUE)
+
+    return mask
+
+
+# ============================================================================
+# CLASSIFICATION
+# ============================================================================
+
+def resolve_list_option(value, name_by_id, default):
+    """Read a SyncroSim List column tolerating either its numeric ID or its display name.
+
+    Which of the two comes back depends on how the datasheet was read, so
+    accepting both keeps callers from having to care.
+    """
+    if value != value or value is None:          # NaN -> default
+        return default
+    try:
+        return name_by_id[int(value)]
+    except (ValueError, TypeError, KeyError):
+        name = str(value)
+        if name in name_by_id.values():
+            return name
+        sys.exit("Unrecognised option value: " + repr(value) + ".")
+
+
+def validate_threshold_bands(threshold_table, min_column, max_column, label,
+                             lower_limit=None, upper_limit=None):
+    """Check that a set of classification bands tile the range without gaps or overlaps.
+
+    Each row must satisfy min < max, and once sorted the rows must run
+    end-to-end: every band's maximum is the next band's minimum. Neither
+    condition is enforced by the datasheet itself, and both fail silently at
+    run time - an overlap lets whichever band is applied last quietly win, and
+    a gap drops every pixel that falls in it to no-data. Catching them here
+    turns two invisible wrong answers into one clear message.
+
+    lower_limit / upper_limit, when given, additionally bound the whole range
+    (quantiles must lie in 0-1; raw values are unbounded).
+    """
+    if threshold_table.empty:
+        sys.exit(f"The '{label}' datasheet is required and is empty.")
+
+    bands = []
+    for row in threshold_table.itertuples():
+        low = float(getattr(row, min_column))
+        high = float(getattr(row, max_column))
+
+        if low >= high:
+            sys.exit(
+                f"Invalid range in '{label}': minimum {low} is not less than maximum {high}.")
+
+        if lower_limit is not None and low < lower_limit:
+            sys.exit(
+                f"Invalid range in '{label}': minimum {low} is below the allowed "
+                f"limit of {lower_limit}.")
+
+        if upper_limit is not None and high > upper_limit:
+            sys.exit(
+                f"Invalid range in '{label}': maximum {high} is above the allowed "
+                f"limit of {upper_limit}.")
+
+        bands.append((low, high))
+
+    bands.sort()
+    for (_, previous_high), (next_low, _) in zip(bands, bands[1:]):
+        if next_low < previous_high:
+            sys.exit(
+                f"Overlapping ranges in '{label}': one band ends at {previous_high} "
+                f"while another begins at {next_low}. Overlapping bands are applied in an "
+                "unpredictable order, so each value must fall in exactly one band.")
+        if next_low > previous_high:
+            sys.exit(
+                f"Gap in '{label}': one band ends at {previous_high} and the next begins "
+                f"at {next_low}. Values in between would be left unclassified. Make each "
+                "band's maximum the next band's minimum.")
+
+
+def classify_by_quantiles(raster_data, mask, quantile_table):
+    """Classify a raster into categories using quantile thresholds.
+
+    quantile_table has one row per category with columns classID, minQuantile
+    and maxQuantile (each between 0 and 1). The break VALUES are computed from
+    the distribution of valid pixels, so the categories adapt to whatever range
+    the raster happens to occupy - the quantile analogue of classifying against
+    fixed values. This matters most for a combined surface, whose range depends
+    on how many Scenarios went into it and how they were weighted, but it works
+    on any raster.
+
+    Intervals are half-open [min, max), except that a maxQuantile of 1 is
+    closed so the single largest pixel is not left unclassified. Pixels falling
+    in no interval are no-data in the output.
+
+    Returns (class_raster, breaks_table) where breaks_table adds the computed
+    minBreakValue / maxBreakValue per category.
+    """
+    valid = raster_data[~mask]
+
+    if valid.size == 0:
+        sys.exit("The raster being classified contains no valid pixels.")
+
+    class_raster = np.full(raster_data.shape, NODATA_VALUE, dtype=np.int16)
+    break_rows = []
+
+    for row in quantile_table.itertuples():
+        low = float(np.quantile(valid, row.minQuantile))
+        high = float(np.quantile(valid, row.maxQuantile))
+
+        if row.maxQuantile >= 1.0:
+            selected = (raster_data >= low) & (raster_data <= high) & ~mask
+        else:
+            selected = (raster_data >= low) & (raster_data < high) & ~mask
+
+        class_raster[selected] = int(row.classID)
+        break_rows.append({"classID": int(row.classID),
+                           "minQuantile": float(row.minQuantile),
+                           "maxQuantile": float(row.maxQuantile),
+                           "minBreakValue": low, "maxBreakValue": high})
+
+    return class_raster, pd.DataFrame(break_rows)
+
+
+def classify_by_values(raster_data, mask, threshold_table):
+    """Classify a raster into categories using fixed value thresholds.
+
+    threshold_table has one row per category with columns classID, minValue and
+    maxValue, interpreted directly against the raster's own values. Intervals
+    are half-open [min, max) so adjoining bands do not both claim their shared
+    edge - except the topmost band, which is closed so that pixels sitting
+    exactly on the overall maximum are not left unclassified. Without that,
+    bands of 0-0.25-0.5-0.75-1 silently drop every pixel whose value is exactly
+    1. Pixels falling in no interval, and no-data pixels, are no-data in the
+    output.
+
+    Returns (class_raster, breaks_table) with the same shape of breaks_table as
+    classify_by_quantiles, so callers can treat the two interchangeably; the
+    quantile columns are left empty.
+    """
+    class_raster = np.full(raster_data.shape, NODATA_VALUE, dtype=np.int16)
+    break_rows = []
+
+    highest_bound = max(float(row.maxValue) for row in threshold_table.itertuples())
+
+    for row in threshold_table.itertuples():
+        low = float(row.minValue)
+        high = float(row.maxValue)
+
+        if high >= highest_bound:
+            selected = (raster_data >= low) & (raster_data <= high) & ~mask
+        else:
+            selected = (raster_data >= low) & (raster_data < high) & ~mask
+        class_raster[selected] = int(row.classID)
+        break_rows.append({"classID": int(row.classID),
+                           "minQuantile": None, "maxQuantile": None,
+                           "minBreakValue": low, "maxBreakValue": high})
+
+    return class_raster, pd.DataFrame(break_rows)
 
 
 # ============================================================================

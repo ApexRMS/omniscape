@@ -3,12 +3,16 @@
 # Ensemble Connectivity transformer
 #
 # Combines the normalized current maps of two or more omniscape Scenarios
-# (typically one per species) into a single ensemble connectivity surface,
-# then classifies it into connectivity categories using quantile thresholds.
+# (typically one per species) into a single ensemble connectivity surface.
 #
 # The Scenarios to combine are supplied as dependencies of this Scenario.
 # Per-Scenario weights come from the 'Ensemble Weights'
 # datasheet; unlisted dependencies weigh 1.0.
+#
+# Classification is deliberately not done here. Run 'Categorize Connectivity
+# Output' after this transformer to slice the ensemble into connectivity
+# categories; it picks the ensemble raster up automatically and can classify it
+# either against fixed values or by quantile.
 
 import pysyncrosim as ps
 import pandas as pd
@@ -17,11 +21,10 @@ import rasterio
 import numpy as np
 import sys
 
-from helperFunctions import safe_progress_bar
+from helperFunctions import safe_progress_bar, resolve_list_option
 from ensembleFunctions import (NODATA_VALUE, nodata_mask, validate_same_grid,
                                standardize_min_max, focal_statistic, combine_layers,
-                               classify_by_quantiles, resolve_ensemble_weights,
-                               safe_update_run_log)
+                               resolve_ensemble_weights, safe_update_run_log)
 
 
 # Set up -----------------------------------------------------------------------
@@ -50,27 +53,14 @@ if os.path.exists(outputEnsemblePath) == False:
 
 # Load input and settings from SyncroSim Library --------------------------------
 
-movementTypeClasses = myProject.datasheets(name = "omniscape_movementTypes", include_key = True)
 ensembleOptions = myScenario.datasheets(name = "omniscape_ensembleOptions")
 ensembleWeights = myScenario.datasheets(name = "omniscape_ensembleWeights")
-ensembleThresholds = myScenario.datasheets(name = "omniscape_ensembleThresholds")
 
 
 # Resolve options, tolerating both list IDs and display names --------------------
 
 COMBINATION_NAMES = {0: "Weighted Mean", 1: "Weighted Sum", 2: "Maximum", 3: "Minimum"}
 FOCAL_NAMES = {0: "Mean", 1: "Sum", 2: "Max", 3: "Min"}
-
-def resolveListOption(value, nameById, default):
-    if value != value or value is None:          # NaN -> default
-        return default
-    try:
-        return nameById[int(value)]
-    except (ValueError, TypeError, KeyError):
-        name = str(value)
-        if name in nameById.values():
-            return name
-        sys.exit("Unrecognised option value: " + repr(value) + ".")
 
 if ensembleOptions.empty:
     combinationMethod = "Weighted Mean"
@@ -79,11 +69,11 @@ if ensembleOptions.empty:
     focalRadius = None
     focalFunction = "Mean"
 else:
-    combinationMethod = resolveListOption(ensembleOptions.combinationFunction.item(), COMBINATION_NAMES, "Weighted Mean")
+    combinationMethod = resolve_list_option(ensembleOptions.combinationFunction.item(), COMBINATION_NAMES, "Weighted Mean")
     standardizeInputs = str(ensembleOptions.standardizeInputs.item()) != "No"
     useFocalWindow = str(ensembleOptions.useFocalWindow.item()) == "Yes"
     focalRadius = ensembleOptions.focalRadius.item()
-    focalFunction = resolveListOption(ensembleOptions.focalFunction.item(), FOCAL_NAMES, "Mean")
+    focalFunction = resolve_list_option(ensembleOptions.focalFunction.item(), FOCAL_NAMES, "Mean")
 
 if useFocalWindow:
     if focalRadius != focalRadius or focalRadius is None:
@@ -91,15 +81,6 @@ if useFocalWindow:
     focalRadius = int(focalRadius)
     if focalRadius < 1:
         sys.exit("'Focal radius' must be at least 1 pixel.")
-
-
-# Validation for inputs ----------------------------------------------------------
-
-if movementTypeClasses.empty:
-    sys.exit("The 'Connectivity Categories' datasheet is required.")
-
-if ensembleThresholds.empty:
-    sys.exit("The 'Ensemble Category Thresholds' datasheet is required.")
 
 
 # Identify the Scenarios to combine from the dependencies ------------------------
@@ -182,24 +163,7 @@ if useFocalWindow:
     ensembleData = focal_statistic(ensembleData, ensembleMask, focalRadius, focalFunction)
 
 
-# Classify by quantiles -----------------------------------------------------------
-
-safe_progress_bar(message="Classifying ensemble", report_type="message")
-
-# Attach classIDs to the threshold rows via the project's category vocabulary
-quantileTable = ensembleThresholds.merge(
-    movementTypeClasses[["movementTypesId", "Name", "classID"]],
-    left_on = "movementType", right_on = "Name", how = "left", validate = "many_to_one")
-
-if quantileTable.classID.isna().any():
-    unknown = quantileTable[quantileTable.classID.isna()].movementType.tolist()
-    sys.exit("'Ensemble Category Thresholds' references unknown connectivity "
-             "categories: " + ", ".join(repr(u) for u in unknown) + ".")
-
-classRaster, breaksTable = classify_by_quantiles(ensembleData, ensembleMask, quantileTable)
-
-
-# Save spatial outputs --------------------------------------------------------------
+# Save spatial output --------------------------------------------------------------
 
 outMeta = referenceRaster.meta.copy()
 outMeta.update(count = 1, dtype = "float32", nodata = NODATA_VALUE)
@@ -209,49 +173,11 @@ ensemblePath = os.path.join(outputEnsemblePath, "ensemble_connectivity.tif")
 with rasterio.open(ensemblePath, mode = "w", **outMeta) as outputRaster:
     outputRaster.write(ensembleOut, 1)
 
-outMeta.update(dtype = "int16", nodata = NODATA_VALUE)
-classPath = os.path.join(outputEnsemblePath, "ensemble_categories.tif")
-with rasterio.open(classPath, mode = "w", **outMeta) as outputRaster:
-    outputRaster.write(classRaster.astype("int16"), 1)
-
 outputSpatialEnsemble = myScenario.datasheets(name = "omniscape_outputSpatialEnsemble")
 outputSpatialEnsemble.ensembleRaster = pd.Series(ensemblePath)
-outputSpatialEnsemble.ensembleCategoryRaster = pd.Series(classPath)
 myParentScenario.save_datasheet(name = "omniscape_outputSpatialEnsemble", data = outputSpatialEnsemble)
 
-
-# Save tabular output ----------------------------------------------------------------
-
-# Per category: the quantiles requested, the break values computed from this
-# run's ensemble distribution, and the resulting area and share of valid pixels
-pixelArea = abs(referenceRaster.res[0] * referenceRaster.res[1])
 validCount = int((~ensembleMask).sum())
-
-summaryRows = []
-
-for breakRow in breaksTable.itertuples():
-    classCount = int((classRaster == breakRow.classID).sum())
-    movementTypesId = int(movementTypeClasses.movementTypesId[
-        movementTypeClasses.classID == breakRow.classID].iloc[0])
-    summaryRows.append({
-        "movementTypesID": movementTypesId,
-        "minQuantile": float(breakRow.minQuantile),
-        "maxQuantile": float(breakRow.maxQuantile),
-        "minBreakValue": float(breakRow.minBreakValue),
-        "maxBreakValue": float(breakRow.maxBreakValue),
-        "amountArea": (classCount * pixelArea) / 10000,
-        "percentCover": (classCount / validCount) if validCount > 0 else 0.0})
-
-outputTabularEnsemble = pd.DataFrame(summaryRows)
-
-# The category reference must stay an integer. Assigning a whole row positionally
-# (df.loc[n] = [...]) coerces every column in that row to float, which submits the
-# category as "16.0" rather than "16"; SyncroSim then cannot match it against the
-# Connectivity Categories list and rejects the save. Building the frame column-wise
-# and pinning the dtype keeps it an integer, matching how the Connectivity
-# Categories transformer writes its own summary.
-if not outputTabularEnsemble.empty:
-    outputTabularEnsemble["movementTypesID"] = \
-        outputTabularEnsemble["movementTypesID"].astype("int64")
-
-myParentScenario.save_datasheet(name = "omniscape_outputTabularEnsemble", data = outputTabularEnsemble)
+safe_update_run_log(
+    "Ensemble connectivity written (" + repr(validCount) + " valid pixels). Add "
+    "'Categorize Connectivity Output' to the pipeline after this stage to classify it.")

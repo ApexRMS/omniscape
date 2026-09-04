@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<update comment="Update to omniscape 2.8 that adds ensemble connectivity and quantile-based categorization">
+
+    <!-- Record the break values actually used for each connectivity category.
+         In Value mode these repeat the Category Thresholds; in the new Quantile
+         mode they are computed from the run's own distribution, and are the only
+         record of what the requested quantiles worked out to. -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_outputTabularReclassification">
+        <item>ALTER TABLE omniscape_outputTabularReclassification ADD COLUMN minBreakValue DOUBLE</item>
+        <item>ALTER TABLE omniscape_outputTabularReclassification ADD COLUMN maxBreakValue DOUBLE</item>
+    </action>
+
+</update>
