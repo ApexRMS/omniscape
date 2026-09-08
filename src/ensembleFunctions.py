@@ -186,7 +186,9 @@ def resolve_ensemble_weights(dependency_table, weights_table):
     an error - it is probably a typo, and silently ignoring it would let a
     mis-keyed weight do nothing without anyone noticing.
 
-    Returns (weights_list, message) with weights ordered as dependency_table.
+    Returns (weights_list, message) with weights positioned against the rows of
+    dependency_table as given. The list carries no Scenario IDs of its own, so
+    the caller must stack its layers from this same table, in this same order.
     """
     dependency_ids = [int(i) for i in dependency_table.Id]
     weight_by_id = {}

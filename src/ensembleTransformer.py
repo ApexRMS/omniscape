@@ -87,6 +87,15 @@ if useFocalWindow:
 
 dependencyTable = myParentScenario.dependencies
 
+# Fix the dependency order once, here, and use this same table everywhere
+# below. The weights are resolved into a plain list positioned against this
+# table, and the layers are stacked in the order they are read from it, so the
+# two only line up if both walk the dependencies in the same order. Sorting in
+# one place and not the other misassigns every weight without failing: the run
+# log still reports the weights the user asked for, and the ensemble raster
+# still looks plausible.
+dependencyTable = dependencyTable.sort_values(by = "Priority").reset_index(drop = True)
+
 if len(dependencyTable) < 2:
     sys.exit(
         "The Ensemble Connectivity transformer requires at least 2 Scenario "
@@ -113,7 +122,7 @@ layerList = []
 maskList = []
 referenceRaster = None
 
-for depRow in dependencyTable.sort_values(by = "Priority").itertuples():
+for depRow in dependencyTable.itertuples():
     depId = int(depRow.Id)
     depName = str(depRow.Name)
 
