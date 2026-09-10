@@ -180,7 +180,12 @@ def combine_layers(layer_stack, mask_stack, weights, method):
 def resolve_ensemble_weights(dependency_table, weights_table):
     """Map each dependency Scenario to its ensemble weight.
 
-    Weights come from the 'Ensemble Weights' datasheet, keyed by Scenario ID.
+    Weights come from the 'Ensemble Weights' datasheet, keyed by the
+    dependencyScenarioId column the user fills in. That column has to exist:
+    SyncroSim's own scenarioId identifies the Scenario that OWNS the datasheet
+    (the ensemble Scenario), which is the same for every row and so cannot say
+    which dependency a weight belongs to.
+
     Any dependency without a row gets weight 1.0, so an empty table is an
     unweighted ensemble. A weight row whose Scenario ID is not a dependency is
     an error - it is probably a typo, and silently ignoring it would let a
@@ -194,8 +199,21 @@ def resolve_ensemble_weights(dependency_table, weights_table):
     weight_by_id = {}
 
     if weights_table is not None and len(weights_table) != 0:
+        if "dependencyScenarioId" not in weights_table.columns:
+            sys.exit(
+                "The 'Ensemble Weights' datasheet has no 'Scenario ID' column. "
+                "Update the omniscape package to 2.8.0 or later, or clear the "
+                "datasheet to weight every dependency equally.")
+
         for row in weights_table.itertuples():
-            scenario_id = int(row.scenarioId)
+            if row.dependencyScenarioId != row.dependencyScenarioId or row.dependencyScenarioId is None:
+                sys.exit(
+                    "Every row of the 'Ensemble Weights' datasheet needs a "
+                    "'Scenario ID' naming the dependency Scenario the weight "
+                    "applies to (found: "
+                    + ", ".join(repr(i) for i in dependency_ids) + ").")
+
+            scenario_id = int(row.dependencyScenarioId)
             if scenario_id not in dependency_ids:
                 sys.exit(
                     "The 'Ensemble Weights' datasheet contains a weight for "

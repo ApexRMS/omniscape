@@ -10,4 +10,14 @@
         <item>ALTER TABLE omniscape_outputTabularReclassification ADD COLUMN maxBreakValue DOUBLE</item>
     </action>
 
+    <!-- The category coverage figure has always been stored as a proportion
+         between 0 and 1, not as a percentage. Renaming the column and its chart
+         variable makes the label match the value, leaving existing results
+         untouched. -->
+    <action code="RenameColumn" tableName="omniscape_outputTabularReclassification" oldColumnName="percentCover" newColumnName="proportionCover">
+    </action>
+
+    <action code="RenameChartVariable" oldVariableName="outputTabularReclassificationPercentCover" newVariableName="outputTabularReclassificationProportionCover">
+    </action>
+
 </update>

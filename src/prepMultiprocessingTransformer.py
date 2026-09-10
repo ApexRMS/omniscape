@@ -21,6 +21,33 @@ safe_progress_bar(message="Initializing PrepMultiprocessing", report_type="messa
 # HELPER FUNCTIONS
 # ============================================================================
 
+def clear_tiling_state(scenario, scenario_data_path):
+    """Undo any tiling this Scenario is still set up for.
+
+    Every path that decides not to tile has to clean up on the way out, because
+    both halves of the tiling state survive between runs. A MaskFileName left in
+    core_SpatialMultiprocessing by an earlier, larger configuration keeps
+    SyncroSim splitting the run into jobs over a grid this run never wrote, and
+    a leftover tile_manifest.json is the only thing the Omniscape transformer
+    looks at to decide it is running tiled - so a stale one sends the next run
+    looping over tiles that no longer exist.
+    """
+    stale_manifest = os.path.join(scenario_data_path, "OmniscapeTiles", "tile_manifest.json")
+    if os.path.exists(stale_manifest):
+        os.remove(stale_manifest)
+        safe_update_run_log(f"Removed stale tile manifest: {stale_manifest}")
+
+    try:
+        scenario.save_datasheet(name="core_SpatialMultiprocessing",
+                                data=pd.DataFrame(columns=["MaskFileName"]))
+        safe_update_run_log("Cleared spatial multiprocessing settings; running in single-process mode.")
+    except Exception as error:
+        safe_update_run_log(
+            f"Warning: could not clear the spatial multiprocessing settings ({error}). "
+            "Clear the 'Spatial Multiprocessing' datasheet manually if the run tries to tile."
+        )
+
+
 def crop_raster_to_extent(input_path, output_path, extent, transform, crs):
     """
     Crop raster to specified extent.
@@ -228,6 +255,10 @@ myLibrary = ps.Library()
 myScenarioID = e.scenario_id.item()
 myScenario = myLibrary.scenarios(myScenarioID)
 
+# Where this Scenario's tile grid and manifest live. Resolved up front because
+# every early exit has to clean up whatever a previous run left there.
+dataPath = os.path.join(wrkDir, f"Scenario-{myScenarioID}")
+
 # Load configuration datasheets
 requiredData = myScenario.datasheets(name="omniscape_Required", show_full_paths=True)
 tilingOptions = myScenario.datasheets(name="omniscape_TilingOptions")
@@ -380,6 +411,7 @@ if valid_pixels < MIN_PIXELS_FOR_TILING:
         f"requires {min_tile_pixels_with_buffer:,} pixels per tile. "
         "Skipping tile generation. Omniscape will run in single-process mode."
     )
+    clear_tiling_state(myScenario, dataPath)
     sys.exit(0)
 
 # Calculate optimal tile count based on multiple constraints
@@ -527,10 +559,19 @@ dropped_ids = [t["provisional_id"] for t in tile_layout
 id_remap = {old_id: new_id for new_id, old_id in enumerate(sorted(surviving_ids), start=1)}
 
 if dropped_ids:
-    remapped_grid = np.full_like(grid, -9999)
+    # Remap through a lookup table indexed by the provisional ID, so the raster
+    # is rewritten in a single vectorized pass. Comparing the grid against each
+    # surviving ID in turn would instead walk every pixel once per tile, which
+    # on a large raster split into many tiles is the same work a hundred times
+    # over.
+    grid_dtype = grid.dtype
+    max_provisional_id = max(t["provisional_id"] for t in tile_layout)
+    id_lookup = np.full(max_provisional_id + 1, -9999, dtype=grid_dtype)
     for old_id, new_id in id_remap.items():
-        remapped_grid[grid == old_id] = new_id
-    grid = remapped_grid
+        id_lookup[old_id] = new_id
+
+    surviving = grid >= 0
+    grid = np.where(surviving, id_lookup[np.where(surviving, grid, 0)], -9999).astype(grid_dtype)
 
     safe_update_run_log(
         f"Dropped {len(dropped_ids)} of {tile_count} tiles containing no analysis area "
@@ -547,20 +588,15 @@ if dropped_ids:
     safe_update_run_log(f"Renumbered surviving tiles contiguously as 1-{tile_count}")
 
 # Save tile grid
-dataPath = os.path.join(wrkDir, f"Scenario-{myScenarioID}")
 os.makedirs(dataPath, exist_ok=True)
 
 # Tiling cannot help if the analysis area only ever reaches one tile
 if tile_count < 2:
-    stale_manifest = os.path.join(dataPath, "OmniscapeTiles", "tile_manifest.json")
-    if os.path.exists(stale_manifest):
-        os.remove(stale_manifest)
-        safe_update_run_log(f"Removed stale tile manifest: {stale_manifest}")
-
     safe_update_run_log(
         f"Only {tile_count} tile contains analysis area once NoData is excluded, so there is "
         "nothing to parallelize. Skipping tile generation. Omniscape will run in single-process mode."
     )
+    clear_tiling_state(myScenario, dataPath)
     sys.exit(0)
 
 tile_size_k = int(valid_pixels / tile_count / 1000)

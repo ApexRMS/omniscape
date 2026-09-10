@@ -122,16 +122,34 @@ else:
                              "Category Thresholds")
 
 # Attach classIDs to the threshold rows through the Project's category
-# vocabulary. Matching by name rather than by row position matters: the two
-# datasheets are independently ordered, so pairing them positionally silently
-# assigns the wrong category whenever their orders differ.
-thresholdTable = reclassificationThresholds.merge(
-    movementTypeClasses[["movementTypesId", "Name", "classID"]],
-    left_on = "movementType", right_on = "Name", how = "left", validate = "many_to_one")
+# vocabulary. Matching on the reference key rather than by row position matters:
+# the two datasheets are independently ordered, so pairing them positionally
+# silently assigns the wrong category whenever their orders differ.
+#
+# The 'Connectivity category' column is a Datasheet reference, so it holds the
+# referenced row's primary key (movementTypesId), not its display Name - "Name"
+# is only what the SyncroSim user interface shows in the cell. Joining on Name
+# would therefore match nothing and leave every classID empty. The display name
+# is still accepted as a fallback, in the same spirit as resolve_list_option:
+# which of the two comes back depends on how the datasheet was read.
+categoryVocabulary = movementTypeClasses[["movementTypesId", "Name", "classID"]].copy()
+categoryVocabulary["movementTypesId"] = pd.to_numeric(
+    categoryVocabulary.movementTypesId, errors = "coerce").astype("Int64")
+
+categoryKey = pd.to_numeric(reclassificationThresholds.movementType, errors = "coerce").astype("Int64")
+
+if categoryKey.isna().all():
+    thresholdTable = reclassificationThresholds.merge(
+        categoryVocabulary, left_on = "movementType", right_on = "Name",
+        how = "left", validate = "many_to_one")
+else:
+    thresholdTable = reclassificationThresholds.assign(movementTypesId = categoryKey).merge(
+        categoryVocabulary, on = "movementTypesId", how = "left", validate = "many_to_one")
 
 if thresholdTable.classID.isna().any():
     unknown = thresholdTable[thresholdTable.classID.isna()].movementType.tolist()
-    sys.exit("'Category Thresholds' references unknown connectivity categories: "
+    sys.exit("'Category Thresholds' references connectivity categories that are not "
+             "defined in the Project's 'Connectivity Categories' datasheet: "
              + ", ".join(repr(u) for u in unknown) + ".")
 
 
@@ -169,7 +187,8 @@ myOutput.movementTypes = pd.Series(categoriesPath)
 
 # Per category: the break values actually used (computed from this run's
 # distribution in quantile mode, taken straight from the datasheet otherwise),
-# plus the resulting area and share of valid pixels
+# plus the resulting area and share of valid pixels. The share is a proportion
+# between 0 and 1, which is what the column and chart are named for.
 pixelArea = abs(inputRaster.res[0] * inputRaster.res[1])
 validCount = int((~mask).sum())
 
@@ -184,7 +203,7 @@ for breakRow in breaksTable.itertuples():
         "minBreakValue": float(breakRow.minBreakValue),
         "maxBreakValue": float(breakRow.maxBreakValue),
         "amountArea": (classCount * pixelArea) / 10000,
-        "percentCover": (classCount / validCount) if validCount > 0 else 0.0})
+        "proportionCover": (classCount / validCount) if validCount > 0 else 0.0})
 
 myTabularOutput = pd.DataFrame(summaryRows)
 

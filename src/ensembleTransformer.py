@@ -21,7 +21,8 @@ import rasterio
 import numpy as np
 import sys
 
-from helperFunctions import safe_progress_bar, resolve_list_option
+from helperFunctions import (safe_progress_bar, resolve_list_option,
+                             resolve_boolean_option)
 from ensembleFunctions import (NODATA_VALUE, nodata_mask, validate_same_grid,
                                standardize_min_max, focal_statistic, combine_layers,
                                resolve_ensemble_weights, safe_update_run_log)
@@ -70,8 +71,8 @@ if ensembleOptions.empty:
     focalFunction = "Mean"
 else:
     combinationMethod = resolve_list_option(ensembleOptions.combinationFunction.item(), COMBINATION_NAMES, "Weighted Mean")
-    standardizeInputs = str(ensembleOptions.standardizeInputs.item()) != "No"
-    useFocalWindow = str(ensembleOptions.useFocalWindow.item()) == "Yes"
+    standardizeInputs = resolve_boolean_option(ensembleOptions.standardizeInputs.item(), True)
+    useFocalWindow = resolve_boolean_option(ensembleOptions.useFocalWindow.item(), False)
     focalRadius = ensembleOptions.focalRadius.item()
     focalFunction = resolve_list_option(ensembleOptions.focalFunction.item(), FOCAL_NAMES, "Mean")
 

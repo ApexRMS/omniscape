@@ -33,7 +33,7 @@ This tutorial guides you through using the **omniscapeImpact** package, which ex
 
 ### **Requirements**
 
-Before you begin, make sure that the **omniscape** SyncroSim package version 2.7.0 is installed, along with SyncroSim version 3.1.0 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
+Before you begin, make sure that the **omniscape** SyncroSim package version 2.8.0 is installed, along with SyncroSim version 3.1.0 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
 
 > **Note:** **omniscapeImpact** shares its Conda environment with **omniscape**, so **omniscape** must be installed and its Conda environment created first.
 

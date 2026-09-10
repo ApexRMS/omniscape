@@ -121,7 +121,7 @@
           <column name="minBreakValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Lower bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
           <column name="maxBreakValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Upper bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
           <column name="amountArea" displayName="Area" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="percentCover" displayName="Percent cover" dataType="Double" validationType="Decimal" validationCondition="None" />
+          <column name="proportionCover" displayName="Proportion of area" dataType="Double" validationType="Decimal" validationCondition="None" description="Share of the classified surface's valid pixels falling in this category, as a proportion between 0 and 1." />
       </dataSheet>
 
       <dataSheet name="ensembleOptions" displayName="Ensemble Options" isSingleRow="True">
@@ -133,6 +133,7 @@
       </dataSheet>
 
       <dataSheet name="ensembleWeights" displayName="Ensemble Weights">
+          <column name="dependencyScenarioId" displayName="Scenario ID" dataType="Integer" validationType="WholeNumber" validationCondition="Greater" formula1="0" allowDbNull="False" description="ID of the dependency Scenario this weight applies to, as shown in the Scenario ID column of the Library Explorer. Every dependency without a row here is weighted 1." />
           <column name="weight" displayName="Weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" allowDbNull="False" description="Relative weight for this Scenario. Greater than 1 increases its influence, less than 1 decreases it. To exclude a Scenario, remove it from the dependencies." />
           <column name="Description" dataType="String" isOptional="True" />
       </dataSheet>
@@ -194,6 +195,7 @@
       isMultiprocessing="False">
         <dataSheet name="ensembleOptions" type="Input" />
         <dataSheet name="ensembleWeights" type="Input" />
+        <dataSheet name="outputSpatial" type="Input" />
         <dataSheet name="outputSpatialEnsemble" type="Output" />
     </transformer>
 
@@ -263,7 +265,7 @@
     <layout type="Chart">
       <group name="Connectivitycategories" displayName="Connectivity categories">
         <item name="outputTabularReclassificationAmountArea" displayName="Area (ha)" dataSheet="outputTabularReclassification" column="amountArea" filter="movementTypesID" prefixFolderName="False" />
-        <item name="outputTabularReclassificationPercentCover" displayName="Percent cover" dataSheet="outputTabularReclassification" column="percentCover" filter="movementTypesID" prefixFolderName="False" />
+        <item name="outputTabularReclassificationProportionCover" displayName="Proportion of area" dataSheet="outputTabularReclassification" column="proportionCover" filter="movementTypesID" prefixFolderName="False" />
       </group>
     </layout>
 

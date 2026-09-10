@@ -108,6 +108,38 @@ def resolve_list_option(value, name_by_id, default):
         sys.exit("Unrecognised option value: " + repr(value) + ".")
 
 
+def resolve_boolean_option(value, default):
+    """Read a SyncroSim Boolean column tolerating every form it comes back in.
+
+    SyncroSim stores Booleans as integers - 0 for false and a non-zero value
+    (conventionally -1) for true - but the same column can also arrive as a
+    Python bool or as its "Yes"/"No" display string depending on how the
+    datasheet was read. Comparing the raw value against "Yes" therefore reads
+    -1 as false and 0 as true, which is exactly backwards, so every form is
+    handled here instead. An empty value falls back to the given default.
+    """
+    if value is None or pd.isna(value):           # empty -> default
+        return default
+
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("yes", "true", "y", "t", "-1", "1"):
+            return True
+        if text in ("no", "false", "n", "f", "0"):
+            return False
+        if text == "":
+            return default
+        sys.exit("Unrecognised Yes/No value: " + repr(value) + ".")
+
+    try:
+        return int(value) != 0
+    except (ValueError, TypeError):
+        sys.exit("Unrecognised Yes/No value: " + repr(value) + ".")
+
+
 def validate_threshold_bands(threshold_table, min_column, max_column, label,
                              lower_limit=None, upper_limit=None):
     """Check that a set of classification bands tile the range without gaps or overlaps.
