@@ -9,6 +9,7 @@
 # given helper came from.
 
 import numpy as np
+import pandas as pd
 import sys
 
 from helperFunctions import NODATA_VALUE, nodata_mask, safe_update_run_log
@@ -22,6 +23,9 @@ _REEXPORTED = (NODATA_VALUE, nodata_mask, safe_update_run_log)
 # between a raster merged from spatial tiles and one written in a single pass,
 # tight enough that a genuine offset of even one pixel is rejected.
 GRID_TOLERANCE_FRACTION = 0.01
+
+# What a Scenario contributes at when it has not been given a weight of its own
+DEFAULT_WEIGHT = 1.0
 
 
 def validate_same_grid(base_source, altr_source, raster_label):
@@ -177,61 +181,52 @@ def combine_layers(layer_stack, mask_stack, weights, method):
     return ensemble, ~any_valid
 
 
-def resolve_ensemble_weights(dependency_table, weights_table):
-    """Map each dependency Scenario to its ensemble weight.
+def read_scenario_weight(scenario, scenario_label):
+    """Read one Scenario's own weight for the ensemble it is being combined into.
 
-    Weights come from the 'Ensemble Weights' datasheet, keyed by the
-    dependencyScenarioId column the user fills in. That column has to exist:
-    SyncroSim's own scenarioId identifies the Scenario that OWNS the datasheet
-    (the ensemble Scenario), which is the same for every row and so cannot say
-    which dependency a weight belongs to.
+    The weight lives in the single-row 'Ensemble Contribution' datasheet on the
+    Scenario being combined, so it is tied to that Scenario by where it is
+    stored rather than by a key pointing back at it. Nothing can be mis-keyed
+    onto the wrong Scenario, orphaned by a rename, or left silently doing
+    nothing - and there is no separate list of weights that has to be kept in
+    step with the order the dependencies are read in.
 
-    Any dependency without a row gets weight 1.0, so an empty table is an
-    unweighted ensemble. A weight row whose Scenario ID is not a dependency is
-    an error - it is probably a typo, and silently ignoring it would let a
-    mis-keyed weight do nothing without anyone noticing.
-
-    Returns (weights_list, message) with weights positioned against the rows of
-    dependency_table as given. The list carries no Scenario IDs of its own, so
-    the caller must stack its layers from this same table, in this same order.
+    A Scenario that never set a weight contributes at 1.0, so an ensemble whose
+    dependencies were all left alone is an unweighted one.
     """
-    dependency_ids = [int(i) for i in dependency_table.Id]
-    weight_by_id = {}
+    try:
+        contribution = scenario.datasheets(name = "omniscape_ensembleContribution")
+    except Exception as error:
+        # A Scenario predating the datasheet still combines, unweighted. Say so
+        # rather than swallowing it: a library or connection error reaching the
+        # datasheet looks identical from here, and defaulting to 1.0 without a
+        # word would turn it into a plausible-looking wrong answer.
+        safe_update_run_log(
+            "Could not read the ensemble weight for Scenario '" + scenario_label
+            + "' (" + repr(error) + "); contributing at " + repr(DEFAULT_WEIGHT) + ".")
+        return DEFAULT_WEIGHT
 
-    if weights_table is not None and len(weights_table) != 0:
-        if "dependencyScenarioId" not in weights_table.columns:
-            sys.exit(
-                "The 'Ensemble Weights' datasheet has no 'Scenario ID' column. "
-                "Update the omniscape package to 2.8.0 or later, or clear the "
-                "datasheet to weight every dependency equally.")
+    if contribution.empty or "weight" not in contribution.columns:
+        return DEFAULT_WEIGHT
 
-        for row in weights_table.itertuples():
-            if row.dependencyScenarioId != row.dependencyScenarioId or row.dependencyScenarioId is None:
-                sys.exit(
-                    "Every row of the 'Ensemble Weights' datasheet needs a "
-                    "'Scenario ID' naming the dependency Scenario the weight "
-                    "applies to (found: "
-                    + ", ".join(repr(i) for i in dependency_ids) + ").")
+    value = contribution.weight.iloc[0]
+    if pd.isna(value):
+        return DEFAULT_WEIGHT
 
-            scenario_id = int(row.dependencyScenarioId)
-            if scenario_id not in dependency_ids:
-                sys.exit(
-                    "The 'Ensemble Weights' datasheet contains a weight for "
-                    "Scenario ID " + repr(scenario_id) + ", which is not a "
-                    "dependency of this Scenario. Weights can only be assigned "
-                    "to dependency Scenarios (found: "
-                    + ", ".join(repr(i) for i in dependency_ids) + ").")
-            if scenario_id in weight_by_id:
-                sys.exit(
-                    "The 'Ensemble Weights' datasheet contains more than one "
-                    "weight for Scenario ID " + repr(scenario_id) + ".")
-            weight_by_id[scenario_id] = float(row.weight)
+    weight = float(value)
 
-    weights_list = [weight_by_id.get(i, 1.0) for i in dependency_ids]
+    if weight <= 0:
+        sys.exit(
+            "Scenario '" + scenario_label + "' has an ensemble weight of "
+            + repr(weight) + ". Weights must be greater than 0. To leave a "
+            "Scenario out of an ensemble, remove it from the ensemble "
+            "Scenario's dependencies.")
 
-    names = list(dependency_table.Name)
-    message = ("Ensemble weights: " + ", ".join(
-        "'" + str(n) + "' (ID " + repr(i) + ") = " + repr(w)
-        for n, i, w in zip(names, dependency_ids, weights_list)) + ".")
+    return weight
 
-    return weights_list, message
+
+def describe_ensemble_weights(dependency_table, weights):
+    """Summarize, for the run log, what each dependency contributed at."""
+    return ("Ensemble weights: " + ", ".join(
+        "'" + str(n) + "' (ID " + repr(int(i)) + ") = " + repr(w)
+        for n, i, w in zip(dependency_table.Name, dependency_table.Id, weights)) + ".")

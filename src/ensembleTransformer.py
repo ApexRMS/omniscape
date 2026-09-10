@@ -5,9 +5,10 @@
 # Combines the normalized current maps of two or more omniscape Scenarios
 # (typically one per species) into a single ensemble connectivity surface.
 #
-# The Scenarios to combine are supplied as dependencies of this Scenario.
-# Per-Scenario weights come from the 'Ensemble Weights'
-# datasheet; unlisted dependencies weigh 1.0.
+# The Scenarios to combine are supplied as dependencies of this Scenario. Each
+# one carries its own weight in its 'Ensemble Contribution' datasheet, read here
+# as that Scenario's raster is loaded; a Scenario that never set one weighs 1.0,
+# so leaving them all alone gives an unweighted ensemble.
 #
 # Classification is deliberately not done here. Run 'Categorize Connectivity
 # Output' after this transformer to slice the ensemble into connectivity
@@ -25,7 +26,8 @@ from helperFunctions import (safe_progress_bar, resolve_list_option,
                              resolve_boolean_option)
 from ensembleFunctions import (NODATA_VALUE, nodata_mask, validate_same_grid,
                                standardize_min_max, focal_statistic, combine_layers,
-                               resolve_ensemble_weights, safe_update_run_log)
+                               read_scenario_weight, describe_ensemble_weights,
+                               safe_update_run_log)
 
 
 # Set up -----------------------------------------------------------------------
@@ -55,7 +57,6 @@ if os.path.exists(outputEnsemblePath) == False:
 # Load input and settings from SyncroSim Library --------------------------------
 
 ensembleOptions = myScenario.datasheets(name = "omniscape_ensembleOptions")
-ensembleWeights = myScenario.datasheets(name = "omniscape_ensembleWeights")
 
 
 # Resolve options, tolerating both list IDs and display names --------------------
@@ -88,13 +89,8 @@ if useFocalWindow:
 
 dependencyTable = myParentScenario.dependencies
 
-# Fix the dependency order once, here, and use this same table everywhere
-# below. The weights are resolved into a plain list positioned against this
-# table, and the layers are stacked in the order they are read from it, so the
-# two only line up if both walk the dependencies in the same order. Sorting in
-# one place and not the other misassigns every weight without failing: the run
-# log still reports the weights the user asked for, and the ensemble raster
-# still looks plausible.
+# Fix the dependency order once, here, and use this same table everywhere below,
+# so that the run log reports the dependencies in the order they were combined
 dependencyTable = dependencyTable.sort_values(by = "Priority").reset_index(drop = True)
 
 if len(dependencyTable) < 2:
@@ -104,8 +100,6 @@ if len(dependencyTable) < 2:
         "each omniscape Scenario to combine (typically one per species) as a "
         "dependency of this Scenario.")
 
-weightsList, weightsMessage = resolve_ensemble_weights(dependencyTable, ensembleWeights)
-safe_update_run_log(weightsMessage)
 safe_update_run_log("Ensemble combination method: " + combinationMethod
                     + ("; inputs standardized to 0-1" if standardizeInputs else
                        "; inputs NOT standardized")
@@ -121,6 +115,7 @@ allScenarios = myProject.scenarios(optional = True)
 
 layerList = []
 maskList = []
+weightsList = []
 referenceRaster = None
 
 for depRow in dependencyTable.itertuples():
@@ -157,8 +152,21 @@ for depRow in dependencyTable.itertuples():
     if standardizeInputs:
         depData = standardize_min_max(depData, depMask)
 
+    # Appended together with the layer they belong to, so a Scenario's weight
+    # cannot drift onto a different Scenario's raster.
+    #
+    # The weight is read from the Scenario the user actually listed as a
+    # dependency, not from the result the raster came out of. A result carries a
+    # copy of its inputs as they stood when it was produced, so reading the
+    # weight there would silently use a stale value whenever it was changed
+    # after that dependency was last run - and would read nothing at all from a
+    # result produced before this datasheet existed. Where the dependency IS a
+    # result, this resolves to that same result, which is what was asked for.
     layerList.append(depData)
     maskList.append(depMask)
+    weightsList.append(read_scenario_weight(myLibrary.scenarios(depId), depName))
+
+safe_update_run_log(describe_ensemble_weights(dependencyTable, weightsList))
 
 
 # Combine into the ensemble -------------------------------------------------------

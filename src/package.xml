@@ -132,10 +132,8 @@
           <column name="focalFunction" displayName="Focal function" dataType="Integer" validationType="List" formula1="0:Mean|1:Sum|2:Max|3:Min" isOptional="True" defaultValue="0" />
       </dataSheet>
 
-      <dataSheet name="ensembleWeights" displayName="Ensemble Weights">
-          <column name="dependencyScenarioId" displayName="Scenario ID" dataType="Integer" validationType="WholeNumber" validationCondition="Greater" formula1="0" allowDbNull="False" description="ID of the dependency Scenario this weight applies to, as shown in the Scenario ID column of the Library Explorer. Every dependency without a row here is weighted 1." />
-          <column name="weight" displayName="Weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" allowDbNull="False" description="Relative weight for this Scenario. Greater than 1 increases its influence, less than 1 decreases it. To exclude a Scenario, remove it from the dependencies." />
-          <column name="Description" dataType="String" isOptional="True" />
+      <dataSheet name="ensembleContribution" displayName="Ensemble Contribution" isSingleRow="True">
+          <column name="weight" displayName="Ensemble weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" isOptional="True" defaultValue="1" description="Relative weight for this Scenario when it is combined into an ensemble. Greater than 1 increases its influence, less than 1 decreases it. Has no effect unless this Scenario is a dependency of an Ensemble Connectivity Scenario; to leave a Scenario out of an ensemble, remove it from that Scenario's dependencies." />
       </dataSheet>
 
       <dataSheet name="outputSpatialEnsemble" displayName="Ensemble" isSingleRow="True">
@@ -194,7 +192,7 @@
       condaEnvVersion="3.5"
       isMultiprocessing="False">
         <dataSheet name="ensembleOptions" type="Input" />
-        <dataSheet name="ensembleWeights" type="Input" />
+        <dataSheet name="ensembleContribution" type="Input" />
         <dataSheet name="outputSpatial" type="Input" />
         <dataSheet name="outputSpatialEnsemble" type="Output" />
     </transformer>
@@ -235,6 +233,10 @@
           <item name="ResistanceModifierTable" />
         </group>
         <item name="OutputOptions" />
+        <!-- A property of THIS Scenario, read by any ensemble that depends on
+             it, so it belongs with the Scenario's own settings rather than
+             under Ensemble Connectivity. -->
+        <item name="ensembleContribution" />
         <group name="Conditional0Connectivity" displayName="Conditional Connectivity">
           <item name="ConditionalOptions" />
           <item name="Condition1" />
@@ -244,7 +246,6 @@
       </group>
       <group name="Ensemble0Connectivity" displayName="Ensemble Connectivity">
         <item name="ensembleOptions" />
-        <item name="ensembleWeights" />
       </group>
       <group name="Advanced" displayName="Advanced">
         <item name="reclassificationOptions" />
