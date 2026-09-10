@@ -6,9 +6,11 @@
 # (typically one per species) into a single ensemble connectivity surface.
 #
 # The Scenarios to combine are supplied as dependencies of this Scenario. Each
-# one carries its own weight in its 'Ensemble Contribution' datasheet, read here
-# as that Scenario's raster is loaded; a Scenario that never set one weighs 1.0,
-# so leaving them all alone gives an unweighted ensemble.
+# one declares which ensemble member it represents - typically a species - in
+# its own 'Ensemble Membership' datasheet, and this Scenario's 'Ensemble
+# Weights' says what each member is worth. Weighting by member rather than by
+# Scenario is what lets one Scenario count for different amounts in different
+# ensembles. Anything left unset weighs 1.0.
 #
 # Classification is deliberately not done here. Run 'Categorize Connectivity
 # Output' after this transformer to slice the ensemble into connectivity
@@ -26,7 +28,7 @@ from helperFunctions import (safe_progress_bar, resolve_list_option,
                              resolve_boolean_option)
 from ensembleFunctions import (NODATA_VALUE, nodata_mask, validate_same_grid,
                                standardize_min_max, focal_statistic, combine_layers,
-                               read_scenario_weight, describe_ensemble_weights,
+                               read_scenario_member, resolve_ensemble_weights,
                                safe_update_run_log)
 
 
@@ -57,6 +59,15 @@ if os.path.exists(outputEnsemblePath) == False:
 # Load input and settings from SyncroSim Library --------------------------------
 
 ensembleOptions = myScenario.datasheets(name = "omniscape_ensembleOptions")
+ensembleWeights = myScenario.datasheets(name = "omniscape_ensembleWeights")
+
+# The Project's member vocabulary, used to report members by name rather than
+# by the ID the datasheets store
+ensembleMembers = myProject.datasheets(name = "omniscape_ensembleMembers", include_key = True)
+memberNames = {}
+if not ensembleMembers.empty:
+    memberNames = {int(r.ensembleMembersId): str(r.Name)
+                   for r in ensembleMembers.itertuples()}
 
 
 # Resolve options, tolerating both list IDs and display names --------------------
@@ -115,7 +126,7 @@ allScenarios = myProject.scenarios(optional = True)
 
 layerList = []
 maskList = []
-weightsList = []
+memberList = []
 referenceRaster = None
 
 for depRow in dependencyTable.itertuples():
@@ -152,21 +163,23 @@ for depRow in dependencyTable.itertuples():
     if standardizeInputs:
         depData = standardize_min_max(depData, depMask)
 
-    # Appended together with the layer they belong to, so a Scenario's weight
+    # Appended together with the layer it belongs to, so a Scenario's membership
     # cannot drift onto a different Scenario's raster.
     #
-    # The weight is read from the Scenario the user actually listed as a
+    # Membership is read from the Scenario the user actually listed as a
     # dependency, not from the result the raster came out of. A result carries a
-    # copy of its inputs as they stood when it was produced, so reading the
-    # weight there would silently use a stale value whenever it was changed
-    # after that dependency was last run - and would read nothing at all from a
-    # result produced before this datasheet existed. Where the dependency IS a
-    # result, this resolves to that same result, which is what was asked for.
+    # copy of its inputs as they stood when it was produced, so reading it there
+    # would silently use a stale value whenever membership changed after that
+    # dependency was last run - and would read nothing at all from a result
+    # produced before this datasheet existed. Where the dependency IS a result,
+    # this resolves to that same result, which is what was asked for.
     layerList.append(depData)
     maskList.append(depMask)
-    weightsList.append(read_scenario_weight(myLibrary.scenarios(depId), depName))
+    memberList.append(read_scenario_member(myLibrary.scenarios(depId), depName, memberNames))
 
-safe_update_run_log(describe_ensemble_weights(dependencyTable, weightsList))
+weightsList, weightsMessage = resolve_ensemble_weights(
+    dependencyTable, memberList, ensembleWeights, memberNames)
+safe_update_run_log(weightsMessage)
 
 
 # Combine into the ensemble -------------------------------------------------------

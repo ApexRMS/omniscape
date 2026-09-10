@@ -7,6 +7,12 @@
           <column name="Description" dataType="String" isOptional="True" />
       </dataSheet>
 
+      <dataSheet name="ensembleMembers" displayName="Ensemble Members" dataScope="Project" displayMember="Name">
+          <column name="Name" dataType="String" description="Name of something an ensemble combines - typically a species. Scenarios declare which member they represent, and each ensemble decides what that member is worth, so the same Scenario can carry different weights in different ensembles." />
+          <column name="Description" dataType="String" isOptional="True" />
+          <validation validationType="Unique" columns="Name" />
+      </dataSheet>
+
       <dataSheet name="Required" displayName="Required" isSingleRow="True">
           <column name="resistanceFile" displayName="Resistance file" dataType="String" isExternalFile="True" externalFileFilter="GeoTIFF Files (*.tif)|*.tif|All Files (*.*)|*.*" isRaster="True" />
           <column name="radius" displayName="Radius" dataType="Integer" validationType="WholeNumber" validationCondition="None" />
@@ -132,8 +138,15 @@
           <column name="focalFunction" displayName="Focal function" dataType="Integer" validationType="List" formula1="0:Mean|1:Sum|2:Max|3:Min" isOptional="True" defaultValue="0" />
       </dataSheet>
 
-      <dataSheet name="ensembleContribution" displayName="Ensemble Contribution" isSingleRow="True">
-          <column name="weight" displayName="Ensemble weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" isOptional="True" defaultValue="1" description="Relative weight for this Scenario when it is combined into an ensemble. Greater than 1 increases its influence, less than 1 decreases it. Has no effect unless this Scenario is a dependency of an Ensemble Connectivity Scenario; to leave a Scenario out of an ensemble, remove it from that Scenario's dependencies." />
+      <dataSheet name="ensembleMembership" displayName="Ensemble Membership" isSingleRow="True">
+          <column name="member" displayName="Ensemble member" dataType="Integer" validationType="Datasheet" formula1="ensembleMembers" isOptional="True" description="Which ensemble member this Scenario represents, typically the species it models. Set this on each Scenario you intend to combine, then give that member a weight in the ensemble Scenario's Ensemble Weights. A Scenario representing no member contributes at weight 1." />
+      </dataSheet>
+
+      <dataSheet name="ensembleWeights" displayName="Ensemble Weights">
+          <column name="member" displayName="Ensemble member" dataType="Integer" validationType="Datasheet" formula1="ensembleMembers" allowDbNull="False" description="The ensemble member this weight applies to. Each dependency Scenario declares which member it represents in its own Ensemble Membership." />
+          <column name="weight" displayName="Weight" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" allowDbNull="False" description="Relative weight for this member. Greater than 1 increases its influence, less than 1 decreases it. Members with no row here are weighted 1. To exclude a Scenario, remove it from the dependencies." />
+          <column name="Description" dataType="String" isOptional="True" />
+          <validation validationType="Unique" columns="member" />
       </dataSheet>
 
       <dataSheet name="outputSpatialEnsemble" displayName="Ensemble" isSingleRow="True">
@@ -179,6 +192,7 @@
         <dataSheet name="ResistanceModifiers" type="Input" />
         <dataSheet name="ResistanceModifierTable" type="Input" />
         <dataSheet name="ResistanceModifierOptions" type="Input" />
+        <dataSheet name="ensembleMembership" type="Input" />
     </transformer>
 
     <transformer
@@ -192,7 +206,7 @@
       condaEnvVersion="3.5"
       isMultiprocessing="False">
         <dataSheet name="ensembleOptions" type="Input" />
-        <dataSheet name="ensembleContribution" type="Input" />
+        <dataSheet name="ensembleWeights" type="Input" />
         <dataSheet name="outputSpatial" type="Input" />
         <dataSheet name="outputSpatialEnsemble" type="Output" />
     </transformer>
@@ -216,6 +230,7 @@
 
     <layout type="Project">
       <item name="movementTypes" />
+      <item name="ensembleMembers" />
     </layout>
 
     <layout type="Scenario">
@@ -233,10 +248,7 @@
           <item name="ResistanceModifierTable" />
         </group>
         <item name="OutputOptions" />
-        <!-- A property of THIS Scenario, read by any ensemble that depends on
-             it, so it belongs with the Scenario's own settings rather than
-             under Ensemble Connectivity. -->
-        <item name="ensembleContribution" />
+        <item name="ensembleMembership" />
         <group name="Conditional0Connectivity" displayName="Conditional Connectivity">
           <item name="ConditionalOptions" />
           <item name="Condition1" />
@@ -246,6 +258,7 @@
       </group>
       <group name="Ensemble0Connectivity" displayName="Ensemble Connectivity">
         <item name="ensembleOptions" />
+        <item name="ensembleWeights" />
       </group>
       <group name="Advanced" displayName="Advanced">
         <item name="reclassificationOptions" />
@@ -285,7 +298,6 @@
       </group>
     </layout>
 
-  <!--Update Provider-->
   <updateProvider
     className="SyncroSim.Core.XMLUpdateProvider"
     classAssembly="SyncroSim.Core">

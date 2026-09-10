@@ -181,52 +181,131 @@ def combine_layers(layer_stack, mask_stack, weights, method):
     return ensemble, ~any_valid
 
 
-def read_scenario_weight(scenario, scenario_label):
-    """Read one Scenario's own weight for the ensemble it is being combined into.
+def resolve_member_reference(value, member_names, source_label):
+    """Read a member Datasheet reference tolerating either its ID or its Name.
 
-    The weight lives in the single-row 'Ensemble Contribution' datasheet on the
-    Scenario being combined, so it is tied to that Scenario by where it is
-    stored rather than by a key pointing back at it. Nothing can be mis-keyed
-    onto the wrong Scenario, orphaned by a rename, or left silently doing
-    nothing - and there is no separate list of weights that has to be kept in
-    step with the order the dependencies are read in.
+    A Datasheet-validated column stores the referenced row's key, but which of
+    the key and the display name comes back depends on how the datasheet was
+    read - the same tolerance resolve_list_option applies to List columns.
+    Coercing blindly would raise a bare ValueError traceback instead of saying
+    what was wrong.
 
-    A Scenario that never set a weight contributes at 1.0, so an ensemble whose
-    dependencies were all left alone is an unweighted one.
+    Returns the member ID, or None when nothing is set.
+    """
+    if value is None or pd.isna(value):
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+
+    name = str(value).strip()
+    for member_id, member_name in member_names.items():
+        if member_name == name:
+            return member_id
+
+    sys.exit(
+        source_label + " refers to ensemble member " + repr(value)
+        + ", which is not defined in the Project's 'Ensemble Members' datasheet"
+        + ((" (found: " + ", ".join(repr(n) for n in member_names.values()) + ")")
+           if member_names else " (that datasheet is empty)") + ".")
+
+
+def read_scenario_member(scenario, scenario_label, member_names):
+    """Read which ensemble member a Scenario represents, or None if it declares none.
+
+    Membership lives in the single-row 'Ensemble Membership' datasheet on the
+    Scenario itself, so it is tied to that Scenario by where it is stored rather
+    than by a key pointing back at it. The weight then hangs off the member
+    rather than off the Scenario, which is what lets one Scenario count for
+    different amounts in different ensembles.
     """
     try:
-        contribution = scenario.datasheets(name = "omniscape_ensembleContribution")
+        membership = scenario.datasheets(name = "omniscape_ensembleMembership")
     except Exception as error:
         # A Scenario predating the datasheet still combines, unweighted. Say so
         # rather than swallowing it: a library or connection error reaching the
-        # datasheet looks identical from here, and defaulting to 1.0 without a
-        # word would turn it into a plausible-looking wrong answer.
+        # datasheet looks identical from here, and defaulting to no member
+        # without a word would turn it into a plausible-looking wrong answer.
         safe_update_run_log(
-            "Could not read the ensemble weight for Scenario '" + scenario_label
-            + "' (" + repr(error) + "); contributing at " + repr(DEFAULT_WEIGHT) + ".")
-        return DEFAULT_WEIGHT
+            "Could not read the ensemble membership of Scenario '" + scenario_label
+            + "' (" + repr(error) + "); contributing at weight "
+            + repr(DEFAULT_WEIGHT) + ".")
+        return None
 
-    if contribution.empty or "weight" not in contribution.columns:
-        return DEFAULT_WEIGHT
+    if membership.empty or "member" not in membership.columns:
+        return None
 
-    value = contribution.weight.iloc[0]
-    if pd.isna(value):
-        return DEFAULT_WEIGHT
+    return resolve_member_reference(
+        membership.member.iloc[0], member_names,
+        "The 'Ensemble Membership' of Scenario '" + scenario_label + "'")
 
-    weight = float(value)
 
-    if weight <= 0:
+def resolve_ensemble_weights(dependency_table, dependency_members, weights_table,
+                             member_names):
+    """Weight each dependency by the ensemble member it represents.
+
+    dependency_members holds one member ID, or None, per row of
+    dependency_table, in that same order - collected as the layers were stacked,
+    so the two cannot fall out of step.
+
+    Weights come from the ensemble Scenario's 'Ensemble Weights' datasheet, keyed
+    by member rather than by Scenario. A member with no weight row, and a
+    dependency declaring no member at all, both contribute at 1.0, so an ensemble
+    left alone is an unweighted one.
+
+    Returns (weights_list, message).
+    """
+    def label(member_id):
+        return repr(member_names.get(member_id, "member " + repr(member_id)))
+
+    weight_by_member = {}
+
+    if weights_table is not None and len(weights_table) != 0:
+        for row in weights_table.itertuples():
+            member_id = resolve_member_reference(
+                row.member, member_names, "The 'Ensemble Weights' datasheet")
+
+            if member_id is None:
+                sys.exit(
+                    "Every row of the 'Ensemble Weights' datasheet needs an "
+                    "'Ensemble member'. Remove the blank row, or choose the "
+                    "member its weight applies to.")
+
+            if member_id in weight_by_member:
+                sys.exit(
+                    "The 'Ensemble Weights' datasheet has more than one weight "
+                    "for member " + label(member_id) + ".")
+
+            weight_by_member[member_id] = float(row.weight)
+
+    claimed = [m for m in dependency_members if m is not None]
+
+    # Two dependencies representing the same member make that member's weight
+    # ambiguous - it is not clear which raster it was meant to scale
+    duplicated = sorted({m for m in claimed if claimed.count(m) > 1})
+    if duplicated:
         sys.exit(
-            "Scenario '" + scenario_label + "' has an ensemble weight of "
-            + repr(weight) + ". Weights must be greater than 0. To leave a "
-            "Scenario out of an ensemble, remove it from the ensemble "
-            "Scenario's dependencies.")
+            "More than one dependency Scenario represents ensemble member "
+            + ", ".join(label(m) for m in duplicated) + ". Each member can be "
+            "represented by only one Scenario in an ensemble.")
 
-    return weight
+    # A weight matching no dependency is almost certainly the wrong member
+    # chosen, and ignoring it would let it do nothing without anyone noticing
+    unused = sorted(set(weight_by_member) - set(claimed))
+    if unused:
+        sys.exit(
+            "The 'Ensemble Weights' datasheet has weights for members that no "
+            "dependency Scenario represents: " + ", ".join(label(m) for m in unused)
+            + ". Set the matching Scenario's 'Ensemble Membership', or remove "
+            "the weight.")
 
+    weights_list = [DEFAULT_WEIGHT if m is None else weight_by_member.get(m, DEFAULT_WEIGHT)
+                    for m in dependency_members]
 
-def describe_ensemble_weights(dependency_table, weights):
-    """Summarize, for the run log, what each dependency contributed at."""
-    return ("Ensemble weights: " + ", ".join(
-        "'" + str(n) + "' (ID " + repr(int(i)) + ") = " + repr(w)
-        for n, i, w in zip(dependency_table.Name, dependency_table.Id, weights)) + ".")
+    message = ("Ensemble weights: " + ", ".join(
+        "'" + str(n) + "' (" + ("no member" if m is None else label(m)) + ") = " + repr(w)
+        for n, m, w in zip(dependency_table.Name, dependency_members, weights_list)) + ".")
+
+    return weights_list, message
