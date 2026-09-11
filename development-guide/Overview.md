@@ -27,7 +27,7 @@ This is a SyncroSim package with three main transformers (pipeline stages):
 
 3. **movementCategoriesTransformer** (`src/movementCategoriesTransformer.py`) - Post-processing transformer that:
    - Categorizes connectivity output into user-defined classes
-   - Generates tabular summaries (area, percent cover)
+   - Generates tabular summaries (area, proportion of area)
    - Creates categorical rasters from normalized current flow
 
 ### Configuration Files
