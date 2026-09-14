@@ -60,7 +60,8 @@
       </dataSheet>
 
       <dataSheet name="ResistanceModifierOptions" displayName="Options" isSingleRow="True">
-          <column name="writeModifiedResistance" displayName="Write modified resistance" dataType="Boolean" isOptional="True" defaultValue="0" description="Output the final modified resistance raster after all modifiers are applied." />
+          <column name="rescaling" displayName="Rescaling" dataType="Integer" validationType="List" formula1="0:Exact|1:Proportional|2:Cap|3:Min-max" isOptional="True" defaultValue="0" description="How the modified surface is brought back to the largest resistance value in the Reclass Table. Exact: no rescaling, so the surface may exceed it. Proportional: the whole surface is divided by the largest multiplier, preserving every ratio between pixels - this is a change of units, so normalized current is unaffected and raw current moves only in scale. Cap: modified values are clamped at the maximum, leaving pixels no modifier touched untouched. Min-max: the surface is stretched onto the Reclass Table's full range; note that resistance is a ratio scale, which an affine map does not preserve." />
+          <column name="writeModifiedResistance" displayName="Write modified resistance" dataType="Boolean" isOptional="True" defaultValue="0" description="Output the final modified resistance raster after all modifiers are applied, including any rescaling." />
       </dataSheet>
 
       <dataSheet name="OutputOptions" displayName="Output Options" isSingleRow="True">
