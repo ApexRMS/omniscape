@@ -56,7 +56,7 @@
           <column name="modifier" displayName="Modifier name" dataType="String" description="Must match a Name in the Resistance Modifiers table." />
           <column name="minValue" displayName="Min modifier value" dataType="Double" validationType="Decimal" validationCondition="None" />
           <column name="maxValue" displayName="Max modifier value" dataType="Double" validationType="Decimal" validationCondition="None" />
-          <column name="multiplier" displayName="Resistance multiplier" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" description="Value by which to multiply resistance. 1.0 = no change." />
+          <column name="multiplier" displayName="Resistance multiplier" dataType="Double" validationType="Decimal" validationCondition="Greater" formula1="0" description="Value by which to multiply resistance. 1.0 = no change. Modifiers are applied after the Reclass Table, so they scale resistance values rather than land cover class IDs. When Resistance is conductance is Yes the value is inverted internally, so a multiplier of 2 still doubles resistance." />
       </dataSheet>
 
       <dataSheet name="ResistanceModifierOptions" displayName="Options" isSingleRow="True">

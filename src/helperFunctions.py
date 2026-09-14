@@ -141,7 +141,7 @@ def resolve_boolean_option(value, default):
 
 
 def validate_threshold_bands(threshold_table, min_column, max_column, label,
-                             lower_limit=None, upper_limit=None):
+                             lower_limit=None, upper_limit=None, allow_gaps=False):
     """Check that a set of classification bands tile the range without gaps or overlaps.
 
     Each row must satisfy min < max, and once sorted the rows must run
@@ -153,6 +153,13 @@ def validate_threshold_bands(threshold_table, min_column, max_column, label,
 
     lower_limit / upper_limit, when given, additionally bound the whole range
     (quantiles must lie in 0-1; raw values are unbounded).
+
+    allow_gaps relaxes the end-to-end requirement for callers where falling in
+    no band is a meaningful outcome rather than a mistake. Resistance modifiers
+    are the case: a pixel matching no band keeps a multiplier of 1.0, so a gap
+    means "leave this range alone" and is worth supporting. Overlaps stay fatal
+    either way, because nothing makes an overlapping pixel's multiplier
+    predictable.
     """
     if threshold_table.empty:
         sys.exit(f"The '{label}' datasheet is required and is empty.")
@@ -185,7 +192,7 @@ def validate_threshold_bands(threshold_table, min_column, max_column, label,
                 f"Overlapping ranges in '{label}': one band ends at {previous_high} "
                 f"while another begins at {next_low}. Overlapping bands are applied in an "
                 "unpredictable order, so each value must fall in exactly one band.")
-        if next_low > previous_high:
+        if next_low > previous_high and not allow_gaps:
             sys.exit(
                 f"Gap in '{label}': one band ends at {previous_high} and the next begins "
                 f"at {next_low}. Values in between would be left unclassified. Make each "
@@ -605,6 +612,89 @@ def merge_tile_outputs(tile_output_paths, final_output_path, full_extent_info):
 
 
 # ============================================================================
+# RESISTANCE RECLASSIFICATION
+# ============================================================================
+
+def apply_reclass_table(resistance_path, reclass_table, output_path,
+                        collect_unmatched=False):
+    """Map land cover class IDs to resistance values.
+
+    This reproduces Omniscape.jl's reclassify_resistance! (utils.jl) so the step
+    can happen here, BEFORE the resistance modifiers, rather than inside Julia
+    after them. Julia reclassifies whatever this package hands it, so a modifier
+    used to multiply nominal class IDs - class 41 scaled by 1.5 became 61.5,
+    which matches no reclass row and survives into the resistance surface as a
+    raw class ID. Doing the lookup first makes the modifiers act on real
+    resistance values, which is the only scale on which multiplying means
+    anything.
+
+    Every rule below is deliberate, and matches Julia:
+
+      * exact-equality lookup against the ORIGINAL pixel values, so a value that
+        has just been reclassified is never re-matched by a later row,
+      * class IDs absent from the table are left unchanged - Julia touches only
+        the pixels a row names,
+      * two rows for one class ID: the LAST row wins,
+      * a resistanceValue of NODATA_VALUE (-9999) becomes no-data, matching the
+        literal "missing" Omniscape reads from a reclass table file,
+      * pixels that were already no-data stay no-data and never match a row.
+
+    reclass_table must carry numeric landCover / resistanceValue columns - not
+    the frame whose resistanceValue has been rewritten to the string "missing"
+    for Julia's benefit.
+
+    Returns (output_path, unmatched_codes). unmatched_codes lists the original
+    values that matched no row, sorted, or None unless collect_unmatched asked
+    for them; gathering them means a full np.unique over the raster, so the
+    caller only pays for it when it has an error to explain.
+    """
+    with rasterio.open(resistance_path) as src:
+        original = src.read(1)
+        meta = src.meta.copy()
+        invalid = nodata_mask(src, original)
+
+    # Class IDs arrive as Byte or Int16; resistance values are Double.
+    original = original.astype(np.float64)
+
+    # Collapsing the table into a dict gives last-row-wins for free, including
+    # across a mix of -9999 and real values, which a per-row mask loop gets
+    # wrong unless it also tracks and clears an earlier row's "missing".
+    mapping = {}
+    for _, row in reclass_table.iterrows():
+        mapping[float(row["landCover"])] = float(row["resistanceValue"])
+
+    codes = np.fromiter(mapping.keys(), dtype=np.float64, count=len(mapping))
+    values = np.fromiter(mapping.values(), dtype=np.float64, count=len(mapping))
+    order = np.argsort(codes)
+    codes, values = codes[order], values[order]
+
+    # One O(n log k) pass, rather than a full-array pass per table row.
+    idx = np.clip(np.searchsorted(codes, original), 0, len(codes) - 1)
+    matched = (codes[idx] == original) & ~invalid
+
+    reclassified = np.where(matched, values[idx], original)
+    invalid |= matched & (values[idx] == NODATA_VALUE)
+    reclassified[invalid] = NODATA_VALUE
+
+    unmatched = None
+    if collect_unmatched:
+        unmatched = sorted(np.unique(original[~matched & ~invalid]).tolist())
+
+    # float64 rather than float32: resistanceValue is a Double, and a float32
+    # round trip moves a value like 0.1 by ~1e-8, which is enough to flip an
+    # exact comparison against r_cutoff or source_threshold in Omniscape.
+    # -9999 rather than NaN for no-data: apply_resistance_modifier restores
+    # no-data with an == comparison, which NaN never satisfies, and
+    # merge_tile_outputs hardcodes -9999 as its source nodata.
+    meta.update(driver="GTiff", count=1, dtype="float64",
+                nodata=NODATA_VALUE, compress="lzw")
+    with rasterio.open(output_path, "w", **meta) as dst:
+        dst.write(reclassified, 1)
+
+    return output_path, unmatched
+
+
+# ============================================================================
 # RESISTANCE MODIFIER
 # ============================================================================
 
@@ -615,8 +705,17 @@ def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
 
     For each pixel:
       1. Read modifier raster value (optionally aggregated via focal window first)
-      2. Look up multiplier: first range where minValue <= value < maxValue
+      2. Look up the multiplier: the one range where minValue <= value < maxValue
       3. Multiply resistance by that multiplier (pixels matching no range use 1.0)
+
+    Ranges are half-open and may not overlap - the caller validates that with
+    validate_threshold_bands, so each value falls in at most one band and the
+    order rows are applied in cannot matter. Gaps between bands are allowed and
+    mean "leave this range alone": a pixel in no band keeps a multiplier of 1.0.
+
+    By the time this runs the resistance raster holds resistance values, not
+    land cover class IDs - apply_reclass_table has already run if the scenario
+    asked for reclassification. Multiplying is only meaningful on that scale.
 
     The modifier raster must share the CRS of the resistance raster. In tiled mode the
     full modifier raster path is passed and windowed reading clips it to the tile extent.

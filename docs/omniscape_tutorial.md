@@ -150,6 +150,26 @@ The *Omniscape* pipeline stage replicates the exact structure and order of param
 
 <img align="center" style="padding: 13px" width="500" src="./images/screenshot17.png">
 
+<div class=indentation>
+  c. Navigate to the <b>Resistance Modifier</b> node. This is optional, and is left empty in this example, but it is worth knowing what it does.
+  <br>
+  <div class=indentation>
+    i. <i>Resistance Modifiers</i> – one row per secondary raster whose values should scale resistance: slope, road density, or any other continuous surface. Each row may optionally aggregate that raster through a focal window first.
+    <br><br>
+    ii. <i>Modifier Lookup Table</i> – maps ranges of a modifier raster's values to multipliers. Ranges are half-open (<i>Min modifier value</i> ≤ value &lt; <i>Max modifier value</i>) and may not overlap. Gaps are allowed and mean "leave this range alone": a pixel matching no range keeps a multiplier of 1.0.
+    <br><br>
+    iii. <i>Options > Write modified resistance</i> – determines whether the final modified resistance raster should be saved and written to file.
+    </div>
+</div>
+
+<br>
+
+**Modifiers are applied after the Reclass Table, never before.** With *Reclassify resistance* set to *Yes*, the *Resistance file* holds land cover class IDs, which are labels rather than quantities — multiplying class 41 by 1.5 gives 61.5, which is not a land cover class and is not a resistance either. The reclass table runs first, turning class IDs into resistance values, and the modifiers then scale those. So a multiplier of 3 applied to a class whose reclass value is 10 gives 30.
+
+A class ID present in the *Resistance file* but absent from the *Reclass table* is left unchanged rather than dropped, and will be carried into the resistance surface as a raw class ID. If such a class is 0 or negative the run stops with an error naming it, since Omniscape cannot solve a surface with non-positive resistance.
+
+One caveat if you use *General Options > Resistance is conductance*: the reclass table then yields conductance, so the multipliers are inverted internally to keep *Resistance multiplier* meaning what it says. The run log records this when it happens.
+
 <br>
 
 The *Categorize Connectivity Output* pipeline stage is an exclusive feature of the **omniscape** SyncroSim package. It allows for seamless post-processing of the continuous output of Omniscape into discrete connectivity categories based on user-defined connectivity categories, a common step in the Omniscape workflow.
