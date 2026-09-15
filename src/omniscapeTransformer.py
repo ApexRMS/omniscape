@@ -24,7 +24,15 @@ from helperFunctions import (
     extend_tile_to_full_extent,
     merge_tile_outputs,
     safe_progress_bar,
-    apply_resistance_modifier
+    nodata_mask,
+    validate_threshold_bands,
+    apply_reclass_table,
+    apply_resistance_modifier,
+    apply_rescaling,
+    max_effective_multiplier,
+    min_effective_multiplier,
+    resolve_list_option,
+    RESCALING_NAMES
 )
 
 # Global variable to track Julia process for cleanup
@@ -326,11 +334,36 @@ if generalOptions.solver.item() != generalOptions.solver.item():
 if resistanceOptions.reclassifyResistance.empty:
     resistanceOptions.reclassifyResistance = pd.Series("No")
 
-if resistanceOptions.reclassifyResistance.item() == "No":
-    resistanceOptions.reclassTable = pd.Series("None")
-
 if resistanceOptions.writeReclassifiedResistance.item() != resistanceOptions.writeReclassifiedResistance.item():
     resistanceOptions.writeReclassifiedResistance = pd.Series("Yes")
+
+# Reclassification is applied here, in Python, ahead of the resistance
+# modifiers. Omniscape.jl would otherwise do it after everything this script
+# hands it, which left the modifiers multiplying land cover class IDs.
+applyReclass = (
+    not resistanceOptions.empty
+    and resistanceOptions.reclassifyResistance.item() == "Yes"
+    and not reclassTable.empty
+)
+
+# Snapshot the numeric columns now. Nothing downstream may hand the helper a
+# frame whose resistanceValue has been rewritten to a string.
+reclassTableNumeric = (
+    reclassTable[["landCover", "resistanceValue"]].copy()
+    if applyReclass else None
+)
+
+# Rescaling ------------------------------------------------------------------
+
+# Read before the Yes/No -> true/false replace below, while the List column is
+# still its raw value.
+rescaling = resolve_list_option(
+    resistanceModifierOptions.rescaling.item()
+    if not resistanceModifierOptions.empty
+    and "rescaling" in resistanceModifierOptions.columns else None,
+    RESCALING_NAMES, "Exact")
+
+applyRescaling = applyModifier and rescaling != "Exact"
 
 if conditionalOptions.conditional.empty:
     conditionalOptions.conditional = pd.Series("No")
@@ -404,11 +437,16 @@ if requiredData.resistanceFile.item() != requiredData.resistanceFile.item():
     sys.exit("'Resistance file' is required.")
 
 resistanceLayer = rasterio.open(requiredDataValidation.resistanceFile[0])
-dataRaster = resistanceLayer.read()
-unique, counts = np.unique(dataRaster, return_counts = True)
-unique = pd.DataFrame(unique)
-if (unique[0] <= 0).values.any():
-    sys.exit("'Resistance file' may not contain 0 or negative values.")
+
+# Only meaningful when the raster already holds resistance. Under
+# reclassification it holds land cover class IDs, where 0 ("unclassified") and
+# negative fill codes are ordinary; the surface that has to be positive is the
+# one built further down, and it is checked there.
+if not applyReclass:
+    dataRaster = resistanceLayer.read()
+    unique = pd.DataFrame(np.unique(dataRaster))
+    if (unique[0] <= 0).values.any():
+        sys.exit("'Resistance file' may not contain 0 or negative values.")
 
 if requiredData.radius[0] != requiredData.radius[0]:
     sys.exit("'Radius' is required.")
@@ -432,6 +470,15 @@ if not resistanceOptions.empty:
             sys.exit("'Reclass Table' has NaN values for 'Land cover class'.")
         if reclassTable['resistanceValue'].isnull().values.any():
             sys.exit("'Reclass Table' has NaN values for 'Resistance value'. If necessary, NaN values should be specified as -9999.")
+        nonPositive = reclassTable[
+            (reclassTable['resistanceValue'] <= 0)
+            & (reclassTable['resistanceValue'] != -9999)]
+        if not nonPositive.empty:
+            sys.exit(
+                "'Reclass Table' maps land cover class(es) "
+                f"{sorted(nonPositive['landCover'].tolist())} to a resistance value "
+                "of 0 or less. Omniscape requires resistance greater than 0; use "
+                "-9999 for NoData.")
 
 if not conditionalOptions.empty:
     if conditionalOptions.conditional.item() == "Yes" and conditionalOptions.nConditions.item() == "1" and condition1.condition1File.item() != condition1.condition1File.item():
@@ -473,6 +520,12 @@ if applyModifier:
         mod_rows = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_name]
         if mod_rows.empty:
             sys.exit(f"'Modifier Lookup Table' has no rows for modifier '{mod_name}'.")
+        # Gaps are allowed here: a pixel in no band keeps a multiplier of 1.0,
+        # so a gap reads as "leave this range alone". Overlaps are not, because
+        # nothing makes an overlapping pixel's multiplier predictable.
+        validate_threshold_bands(
+            mod_rows, 'minValue', 'maxValue',
+            f"Modifier Lookup Table ({mod_name})", allow_gaps = True)
 
 
 # Change "Yes" and "No" to "true" and "false" ----------------------------------
@@ -486,22 +539,111 @@ resistanceModifiers = resistanceModifiers.replace({'Yes': 'true', 'No': 'false'}
 resistanceModifierOptions = resistanceModifierOptions.replace({'Yes': 'true', 'No': 'false'})
 
 
+# Keep "multiply resistance" meaning that under conductance ------------------
 
-# Prepare reclass file ---------------------------------------------------------
+# Omniscape inverts the surface to conductance after reclassification, so the
+# modifiers multiply whatever the reclass table produced. When that is already
+# conductance, multiplying by 2 would double conductance - halving resistance,
+# the opposite of what 'Resistance multiplier' says. Inverting the multiplier
+# keeps the datasheet honest. 1.0 is a fixed point, so the usual case is
+# untouched, and the column is validated greater than 0 so this cannot divide
+# by zero.
+if applyModifier and generalOptions.resistanceIsConductance.item() == "true":
+    resistanceModifierTable = resistanceModifierTable.copy()
+    resistanceModifierTable["multiplier"] = 1.0 / resistanceModifierTable["multiplier"]
+    ps.environment.update_run_log(
+        "'Resistance is conductance' is Yes, so the surface holds conductance. "
+        "Resistance multipliers have been inverted (m -> 1/m) so that a multiplier "
+        "of 2.0 still doubles resistance rather than doubling conductance.")
+
+
+# Derive the rescaling bounds --------------------------------------------------
+
+# Every bound comes from the datasheets, never from raster pixels. Tiles run in
+# separate OS processes under multiprocessing, so a bound measured from one
+# tile's values would differ between tiles and leave seams where they meet.
+
+referenceMax = None
+referenceMin = None
+totalMaxMultiplier = 1.0
+totalMinMultiplier = 1.0
+
+if applyRescaling:
+    if applyReclass:
+        # Strict reclassification guarantees every class in the raster has a
+        # row, so the table's range IS the surface's range.
+        mapped = reclassTableNumeric[
+            reclassTableNumeric["resistanceValue"] != -9999]["resistanceValue"]
+        if mapped.empty:
+            sys.exit(
+                "'Rescaling' needs a reference maximum, but every row of the "
+                "'Reclass Table' maps to -9999 (NoData). At least one class must "
+                "map to a real resistance value.")
+        referenceMax = float(mapped.max())
+        referenceMin = float(mapped.min())
+    else:
+        # No reclassification, so the input raster already holds resistance.
+        # requiredDataValidation.resistanceFile is the FULL raster in every
+        # execution mode, so this stays globally consistent under tiling.
+        with rasterio.open(requiredDataValidation.resistanceFile[0]) as refSrc:
+            refData = refSrc.read(1)
+            refValid = ~nodata_mask(refSrc, refData)
+        if not refValid.any():
+            sys.exit("'Resistance file' contains no valid data.")
+        referenceMax = float(refData[refValid].max())
+        referenceMin = float(refData[refValid].min())
+
+    for _, mod_row in resistanceModifiers.iterrows():
+        mod_rows = resistanceModifierTable[
+            resistanceModifierTable['modifier'] == mod_row['Name']]
+        totalMaxMultiplier *= max_effective_multiplier(mod_rows)
+        totalMinMultiplier *= min_effective_multiplier(mod_rows)
+
+    ps.environment.update_run_log(
+        f"Rescaling: {rescaling}. Reference range [{referenceMin}, {referenceMax}] "
+        f"from the {'Reclass Table' if applyReclass else 'Resistance file'}; "
+        f"largest combined multiplier {totalMaxMultiplier}.")
+
+    if rescaling == "Proportional":
+        ps.environment.update_run_log(
+            f"  Each modifier's multipliers are normalized so its largest becomes "
+            f"1.0, which composes to a factor of {1.0 / totalMaxMultiplier} across "
+            "the chain. Every ratio between pixels is preserved, so this is a "
+            "change of units: normalized current is unaffected and raw current "
+            "moves only in scale.")
+
+
+# Keep r_cutoff meaning what it meant before any rescaling ---------------------
+
+# r_cutoff is an absolute resistance threshold: Omniscape drops a pixel as a
+# source when its resistance exceeds it. Proportional divides the whole surface
+# by a constant, which would silently move the cutoff relative to the values it
+# is judging, so it is scaled by the same constant to stay put. Cap and Min-max
+# are not uniform scalings, so no single correction exists - and both genuinely
+# change the surface, so the cutoff keeps its literal meaning there.
+
+effectiveRCutoff = generalOptions.rCutoff.item()
+
+if rescaling == "Proportional" and applyRescaling:
+    try:
+        rawCutoff = float(effectiveRCutoff)
+    except (TypeError, ValueError):
+        rawCutoff = float("inf")      # the "Inf" default needs no scaling
+    if np.isfinite(rawCutoff):
+        effectiveRCutoff = rawCutoff / totalMaxMultiplier
+        ps.environment.update_run_log(
+            f"  'R cutoff' scaled {rawCutoff} -> {effectiveRCutoff} to match, so it "
+            "still excludes the same pixels it did before rescaling.")
+
+
+
+# Prepare for the Omniscape run ------------------------------------------------
 
 safe_progress_bar(message="Preparing for Omniscape run", report_type="message")
 
-if not reclassTable.empty and (reclassTable != "None").values.any():
-    reclassTablePath = os.path.join(dataPath, "omniscape_ResistanceOptions")
-    if os.path.exists(reclassTablePath) == False:
-        os.mkdir(reclassTablePath)
-    #reclassTable.resistanceValue = reclassTable.resistanceValue.astype(str)
-    reclassTable.loc[reclassTable["resistanceValue"] == -9999, "resistanceValue"] = "missing"
-    with open(os.path.join(reclassTablePath, "reclass_table.txt"), "w") as f:
-        file = reclassTable[["landCover", "resistanceValue"]].to_string(header=False, index=False)
-        f.write(file)
-else:
-    reclassTablePath = "None"
+# NOTE: reclass_table.txt is no longer written. Omniscape only reads it when
+# reclassify_resistance is true, and reclassification now happens here instead,
+# ahead of the resistance modifiers - see the tile loop below.
 
 
 # NOTE: Tiling and buffering are now handled by prepMultiprocessingTransformer
@@ -602,6 +744,31 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         project_name = os.path.join(dataPath, "omniscape_outputSpatial")
 
     # ========================================================================
+    # RECLASSIFY RESISTANCE (if configured)
+    # ========================================================================
+
+    # This has to precede the modifiers. Reclassification is an exact-equality
+    # lookup on nominal land cover class IDs, and multiplying is only defined on
+    # a ratio scale, so the lookup must turn class IDs into resistance values
+    # before anything scales them. Omniscape.jl would run it afterwards.
+
+    if applyReclass:
+        reclass_dir = os.path.join(dataPath, "omniscape_ResistanceReclass")
+        os.makedirs(reclass_dir, exist_ok=True)
+
+        reclass_fname_base = f"tile-{tile_id}-reclass" if is_tiling else "reclass"
+        reclass_output_path = os.path.join(
+            reclass_dir, f"{reclass_fname_base}-resistance.tif")
+
+        resistance_file_path = apply_reclass_table(
+            resistance_path=resistance_file_path,
+            reclass_table=reclassTableNumeric,
+            output_path=reclass_output_path
+        )
+        ps.environment.update_run_log(
+            f"Reclassified resistance → {reclass_output_path}")
+
+    # ========================================================================
     # APPLY RESISTANCE MODIFIER (if configured)
     # ========================================================================
 
@@ -621,15 +788,78 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
 
             mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
 
+            # Proportional folds into the multipliers rather than costing a pass
+            # of its own. Normalizing each modifier by its OWN largest multiplier
+            # composes to 1/totalMaxMultiplier across the chain. Pixels matching
+            # no band keep default_multiplier, so it carries the same factor or
+            # they would escape the division.
+            default_multiplier = 1.0
+            if rescaling == "Proportional":
+                modMax = max_effective_multiplier(mod_table)
+                mod_table = mod_table.copy()
+                mod_table["multiplier"] = mod_table["multiplier"] / modMax
+                default_multiplier = 1.0 / modMax
+
             resistance_file_path = apply_resistance_modifier(
                 resistance_path=resistance_file_path,
                 modifier_path=mod_row['modifierFile'],
                 modifier_table=mod_table,
                 focal_radius=focal_radius,
                 focal_function=focal_fn,
-                output_path=mod_output_path
+                output_path=mod_output_path,
+                default_multiplier=default_multiplier
             )
             ps.environment.update_run_log(f"Applied modifier '{mod_row['Name']}' → {mod_output_path}")
+
+    # ========================================================================
+    # RESCALE THE MODIFIED SURFACE (Cap and Min-max)
+    # ========================================================================
+
+    # Proportional never reaches here - it is a global constant already folded
+    # into the multipliers above. Cap and Min-max depend on each pixel's own
+    # resistance, so they need a pass of their own.
+
+    if applyRescaling and rescaling != "Proportional":
+        rescale_dir = os.path.join(dataPath, "omniscape_ResistanceRescale")
+        os.makedirs(rescale_dir, exist_ok=True)
+
+        rescale_fname_base = f"tile-{tile_id}-rescaled" if is_tiling else "rescaled"
+        rescale_output_path = os.path.join(
+            rescale_dir, f"{rescale_fname_base}-resistance.tif")
+
+        resistance_file_path = apply_rescaling(
+            resistance_path=resistance_file_path,
+            mode=rescaling,
+            output_path=rescale_output_path,
+            reference_max=referenceMax,
+            reference_min=referenceMin,
+            total_max_multiplier=totalMaxMultiplier,
+            total_min_multiplier=totalMinMultiplier,
+            is_conductance=generalOptions.resistanceIsConductance.item() == "true"
+        )
+        ps.environment.update_run_log(
+            f"Rescaled resistance ({rescaling}) → {rescale_output_path}")
+
+    # ========================================================================
+    # VALIDATE THE FINAL RESISTANCE SURFACE
+    # ========================================================================
+
+    # Omniscape refuses a surface with non-positive resistance, but it does so
+    # with @error and an early return rather than an exception: Julia exits 0,
+    # writes nothing, and the run looks successful until the outputs turn up
+    # missing. Catching it here turns that into an explanation.
+
+    if applyReclass or applyModifier:
+        with rasterio.open(resistance_file_path) as finalSurface:
+            finalData = finalSurface.read(1)
+            finalValid = ~nodata_mask(finalSurface, finalData)
+
+        if finalValid.any() and finalData[finalValid].min() <= 0:
+            context = f"tile {tile_id}" if is_tiling else "the resistance surface"
+            sys.exit(
+                f"The resistance surface for {context} contains values of 0 or less "
+                "after reclassification and resistance modifiers were applied. "
+                "Omniscape cannot solve a surface with non-positive resistance.")
 
     # ========================================================================
     # GENERATE CONFIG.INI FOR THIS TILE
@@ -650,7 +880,7 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
         "block_size = " + repr(generalOptions.blockSize.item()) + "\n"
         "source_from_resistance = " + generalOptions.sourceFromResistance.item() + "\n"
         "resistance_is_conductance = " + generalOptions.resistanceIsConductance.item() + "\n"
-        "r_cutoff = " + repr(generalOptions.rCutoff.item()) + "\n"
+        "r_cutoff = " + repr(effectiveRCutoff) + "\n"
         "buffer = " + repr(generalOptions.buffer.item()) + "\n"
         "source_threshold = " + repr(generalOptions.sourceThreshold.item()) + "\n"
         "calc_normalized_current = " + generalOptions.calcNormalizedCurrent.item() + "\n"
@@ -679,9 +909,13 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
     config_file.write(
         "\n"
         "[Resistance Reclassification]" + "\n"
-        "reclassify_resistance = " + resistanceOptions.reclassifyResistance.item() + "\n"
-        "reclass_table = " + os.path.join(reclassTablePath, "reclass_table.txt") + "\n"
-        "write_reclassified_resistance = " + resistanceOptions.writeReclassifiedResistance.item() + "\n"
+        # Reclassification already happened, above, before the modifiers ran.
+        # reclass_table is left empty rather than pointed at a file because
+        # Omniscape warns whenever a table is supplied with reclassification
+        # switched off.
+        "reclassify_resistance = false" + "\n"
+        "reclass_table = " + "\n"
+        "write_reclassified_resistance = false" + "\n"
         "\n"
         "[Conditional Connectivity]" + "\n"
         "conditional = " + conditionalOptions.conditional.item() + "\n"
@@ -832,6 +1066,42 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
                     os.rename(cropped_path, buffered_path)
                     ps.environment.update_run_log(f"  Removed buffer from {output_file}")
 
+            if applyReclass:
+                reclass_path = os.path.join(
+                    dataPath, "omniscape_ResistanceReclass",
+                    f"tile-{tile_id}-reclass-resistance.tif"
+                )
+                if os.path.exists(reclass_path):
+                    cropped_path = reclass_path.replace('.tif', '_cropped.tif')
+                    crop_buffer_from_output(
+                        reclass_path,
+                        cropped_path,
+                        tile_info['original_extent'],
+                        manifest['buffer_pixels'],
+                        tile_info.get('buffered_extent')
+                    )
+                    os.remove(reclass_path)
+                    os.rename(cropped_path, reclass_path)
+                    ps.environment.update_run_log("  Removed buffer from reclassified resistance tile")
+
+            if applyRescaling and rescaling != "Proportional":
+                rescale_path = os.path.join(
+                    dataPath, "omniscape_ResistanceRescale",
+                    f"tile-{tile_id}-rescaled-resistance.tif"
+                )
+                if os.path.exists(rescale_path):
+                    cropped_path = rescale_path.replace('.tif', '_cropped.tif')
+                    crop_buffer_from_output(
+                        rescale_path,
+                        cropped_path,
+                        tile_info['original_extent'],
+                        manifest['buffer_pixels'],
+                        tile_info.get('buffered_extent')
+                    )
+                    os.remove(rescale_path)
+                    os.rename(cropped_path, rescale_path)
+                    ps.environment.update_run_log("  Removed buffer from rescaled resistance tile")
+
             if applyModifier:
                 for mod_idx in range(len(resistanceModifiers)):
                     mod_path = os.path.join(
@@ -859,7 +1129,7 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             full_extent_info = manifest['full_extent']
             full_transform = Affine(*full_extent_info['transform'])
 
-            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif', 'classified_resistance.tif']
+            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif']
 
             for output_file in output_files:
                 tile_path = os.path.join(tile_output_dir, output_file)
@@ -879,11 +1149,53 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
                     os.rename(extended_path, tile_path)
                     ps.environment.update_run_log(f"  Extended {output_file} to full extent")
 
+            # The reclassified surface lives outside tile_output_dir, but it is
+            # registered as an output, so it needs the same treatment.
+            if applyReclass:
+                reclass_path = os.path.join(
+                    dataPath, "omniscape_ResistanceReclass",
+                    f"tile-{tile_id}-reclass-resistance.tif"
+                )
+                if os.path.exists(reclass_path):
+                    extended_path = reclass_path.replace('.tif', '_extended.tif')
+
+                    extend_tile_to_full_extent(
+                        reclass_path,
+                        extended_path,
+                        (full_extent_info['width'], full_extent_info['height']),
+                        full_transform,
+                        full_extent_info['crs']
+                    )
+
+                    os.remove(reclass_path)
+                    os.rename(extended_path, reclass_path)
+                    ps.environment.update_run_log("  Extended reclassified resistance to full extent")
+
+            if applyRescaling and rescaling != "Proportional":
+                rescale_path = os.path.join(
+                    dataPath, "omniscape_ResistanceRescale",
+                    f"tile-{tile_id}-rescaled-resistance.tif"
+                )
+                if os.path.exists(rescale_path):
+                    extended_path = rescale_path.replace('.tif', '_extended.tif')
+
+                    extend_tile_to_full_extent(
+                        rescale_path,
+                        extended_path,
+                        (full_extent_info['width'], full_extent_info['height']),
+                        full_transform,
+                        full_extent_info['crs']
+                    )
+
+                    os.remove(rescale_path)
+                    os.rename(extended_path, rescale_path)
+                    ps.environment.update_run_log("  Extended rescaled resistance to full extent")
+
         else:  # Loop mode
             # Collect tile outputs for later merging
             ps.environment.update_run_log(f"Collecting tile {tile_id} outputs for merging...")
 
-            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif', 'classified_resistance.tif']
+            output_files = ['cum_currmap.tif', 'normalized_cum_currmap.tif', 'flow_potential.tif']
 
             for output_file in output_files:
                 tile_path = os.path.join(tile_output_dir, output_file)
@@ -974,17 +1286,47 @@ if generalOptions.calcNormalizedCurrent.item() == "true":
         ps.environment.update_run_log(f"  Warning: normalized_cum_currmap.tif not found")
 
 # Check for classified resistance
-classified_path = os.path.join(output_dir, "classified_resistance.tif")
-if os.path.exists(classified_path) and resistanceOptions.writeReclassifiedResistance.item() == "true":
-    myOutput.classifiedResistance = pd.Series(classified_path)
-    ps.environment.update_run_log(f"  Added classifiedResistance output (reclassified)")
+# Reclassification now happens in Python, before the modifiers, so Omniscape.jl
+# no longer writes classified_resistance.tif and these paths are ours.
+if applyReclass and resistanceOptions.writeReclassifiedResistance.item() == "true":
+    reclass_dir = os.path.join(dataPath, "omniscape_ResistanceReclass")
+
+    if is_tiling and mode == "loop":
+        tile_reclass_paths = [
+            os.path.join(reclass_dir, f"tile-{tid}-reclass-resistance.tif")
+            for tid in tiles_to_process
+        ]
+        tile_reclass_paths = [tp for tp in tile_reclass_paths if os.path.exists(tp)]
+        if tile_reclass_paths:
+            merged_reclass_path = os.path.join(reclass_dir, "resistance-reclassified.tif")
+            merge_tile_outputs(tile_reclass_paths, merged_reclass_path, manifest['full_extent'])
+            myOutput.classifiedResistance = pd.Series(merged_reclass_path)
+            ps.environment.update_run_log("  Added classifiedResistance output (merged tiles)")
+        else:
+            ps.environment.update_run_log(
+                "  Warning: no reclassified resistance tiles found to merge")
+
+    elif is_tiling:
+        # Multiprocessing: one tile per job, already extended to the full extent
+        # so SyncroSim can merge the jobs together.
+        tile_reclass_path = os.path.join(
+            reclass_dir, f"tile-{tiles_to_process[0]}-reclass-resistance.tif")
+        if os.path.exists(tile_reclass_path):
+            myOutput.classifiedResistance = pd.Series(tile_reclass_path)
+            ps.environment.update_run_log("  Added classifiedResistance output (tile, full extent)")
+
+    else:
+        reclass_path = os.path.join(reclass_dir, "reclass-resistance.tif")
+        if os.path.exists(reclass_path):
+            myOutput.classifiedResistance = pd.Series(reclass_path)
+            ps.environment.update_run_log("  Added classifiedResistance output (reclassified)")
+
 elif is_tiling and mode == "multiprocessing":
-    # In multiprocessing/tiling mode, skip adding classifiedResistance if it doesn't exist
+    # In multiprocessing/tiling mode, skip adding classifiedResistance
     # (the full-extent resistance raster may have Byte data type that SyncroSim merger can't handle)
-    ps.environment.update_run_log(f"  Skipping classifiedResistance in multiprocessing mode (not generated by Omniscape)")
-    # Don't add classifiedResistance to avoid Byte data type merge errors
+    ps.environment.update_run_log(f"  Skipping classifiedResistance in multiprocessing mode")
 else:
-    # Non-tiling mode or loop mode: add original resistance as fallback
+    # Reclassification off: add the raster the user supplied as fallback
     myOutput.classifiedResistance = pd.Series(original_resistance_path)
     ps.environment.update_run_log(f"  Added classifiedResistance output (original)")
 
@@ -996,22 +1338,42 @@ write_modified = (
     and resistanceModifierOptions.writeModifiedResistance.item() == "true"
 )
 if write_modified:
-    last_mod_idx = len(resistanceModifiers) - 1
+    # Cap and Min-max write a surface of their own after the modifier chain, so
+    # the reported raster is that one rather than the last modifier's output.
+    # Proportional folds into the multipliers, so the last modifier's output is
+    # already rescaled.
+    if applyRescaling and rescaling != "Proportional":
+        modified_dir = os.path.join(dataPath, "omniscape_ResistanceRescale")
+        tile_mod_name = "tile-{tid}-rescaled-resistance.tif"
+        flat_mod_name = "rescaled-resistance.tif"
+        merged_mod_name = "resistance-rescaled.tif"
+    else:
+        last_mod_idx = len(resistanceModifiers) - 1
+        modified_dir = os.path.join(dataPath, "omniscape_ResistanceModifier")
+        tile_mod_name = "tile-{tid}-mod" + str(last_mod_idx) + "-resistance.tif"
+        flat_mod_name = f"mod{last_mod_idx}-resistance.tif"
+        merged_mod_name = "resistance-modified.tif"
+
     if is_tiling and mode == "loop":
         tile_mod_paths = [
-            os.path.join(dataPath, "omniscape_ResistanceModifier", f"tile-{tid}-mod{last_mod_idx}-resistance.tif")
+            os.path.join(modified_dir, tile_mod_name.format(tid=tid))
             for tid in tiles_to_process
         ]
-        merged_mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", "resistance-modified.tif")
-        merge_tile_outputs(tile_mod_paths, merged_mod_path, manifest['full_extent'])
-        myOutput.modifiedResistance = pd.Series(merged_mod_path)
-        ps.environment.update_run_log("  Added modifiedResistance output (merged tiles)")
+        tile_mod_paths = [tp for tp in tile_mod_paths if os.path.exists(tp)]
+        if tile_mod_paths:
+            merged_mod_path = os.path.join(modified_dir, merged_mod_name)
+            merge_tile_outputs(tile_mod_paths, merged_mod_path, manifest['full_extent'])
+            myOutput.modifiedResistance = pd.Series(merged_mod_path)
+            ps.environment.update_run_log("  Added modifiedResistance output (merged tiles)")
+        else:
+            ps.environment.update_run_log(
+                "  Warning: no modified resistance tiles found to merge")
     elif is_tiling:
         ps.environment.update_run_log(
             "  Deferring modifiedResistance merge until tile aggregation is complete"
         )
     else:
-        mod_path = os.path.join(dataPath, "omniscape_ResistanceModifier", f"mod{last_mod_idx}-resistance.tif")
+        mod_path = os.path.join(modified_dir, flat_mod_name)
         if os.path.exists(mod_path):
             myOutput.modifiedResistance = pd.Series(mod_path)
             ps.environment.update_run_log("  Added modifiedResistance output")

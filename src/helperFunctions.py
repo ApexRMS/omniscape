@@ -141,7 +141,7 @@ def resolve_boolean_option(value, default):
 
 
 def validate_threshold_bands(threshold_table, min_column, max_column, label,
-                             lower_limit=None, upper_limit=None):
+                             lower_limit=None, upper_limit=None, allow_gaps=False):
     """Check that a set of classification bands tile the range without gaps or overlaps.
 
     Each row must satisfy min < max, and once sorted the rows must run
@@ -153,6 +153,13 @@ def validate_threshold_bands(threshold_table, min_column, max_column, label,
 
     lower_limit / upper_limit, when given, additionally bound the whole range
     (quantiles must lie in 0-1; raw values are unbounded).
+
+    allow_gaps relaxes the end-to-end requirement for callers where falling in
+    no band is a meaningful outcome rather than a mistake. Resistance modifiers
+    are the case: a pixel matching no band keeps a multiplier of 1.0, so a gap
+    means "leave this range alone" and is worth supporting. Overlaps stay fatal
+    either way, because nothing makes an overlapping pixel's multiplier
+    predictable.
     """
     if threshold_table.empty:
         sys.exit(f"The '{label}' datasheet is required and is empty.")
@@ -185,7 +192,7 @@ def validate_threshold_bands(threshold_table, min_column, max_column, label,
                 f"Overlapping ranges in '{label}': one band ends at {previous_high} "
                 f"while another begins at {next_low}. Overlapping bands are applied in an "
                 "unpredictable order, so each value must fall in exactly one band.")
-        if next_low > previous_high:
+        if next_low > previous_high and not allow_gaps:
             sys.exit(
                 f"Gap in '{label}': one band ends at {previous_high} and the next begins "
                 f"at {next_low}. Values in between would be left unclassified. Make each "
@@ -605,18 +612,130 @@ def merge_tile_outputs(tile_output_paths, final_output_path, full_extent_info):
 
 
 # ============================================================================
+# RESISTANCE RECLASSIFICATION
+# ============================================================================
+
+def apply_reclass_table(resistance_path, reclass_table, output_path):
+    """Map land cover class IDs to resistance values.
+
+    This stands in for Omniscape.jl's reclassify_resistance! (utils.jl) so the
+    step can happen here, BEFORE the resistance modifiers, rather than inside
+    Julia after them. Julia reclassifies whatever this package hands it, so a
+    modifier used to multiply nominal class IDs - class 41 scaled by 1.5 became
+    61.5, which matches no reclass row and survived into the resistance surface
+    as a raw class ID. Doing the lookup first makes the modifiers act on real
+    resistance values, which is the only scale on which multiplying means
+    anything.
+
+    Rules that match Julia:
+
+      * exact-equality lookup against the ORIGINAL pixel values, so a value that
+        has just been reclassified is never re-matched by a later row,
+      * two rows for one class ID: the LAST row wins,
+      * a resistanceValue of NODATA_VALUE (-9999) becomes no-data, matching the
+        literal "missing" Omniscape reads from a reclass table file,
+      * pixels that were already no-data stay no-data and never match a row.
+
+    One rule that DIVERGES from Julia, deliberately: a class ID present in the
+    raster but absent from the table is an error here, where Julia leaves it
+    unchanged. Julia only touches the pixels a row names, which means an
+    unlisted class survives as a raw class ID and is then read as though it
+    were a resistance value - class 95 quietly becomes "resistance 95". A
+    nominal class ID is not a resistance, so there is no reading of that which
+    is correct, and it is invisible unless the stray value happens to be
+    non-positive. Erroring also makes the largest value in the table the true
+    maximum of the surface, which is what the modifier rescaling modes rescale
+    against.
+
+    reclass_table must carry numeric landCover / resistanceValue columns - not
+    the frame whose resistanceValue has been rewritten to the string "missing"
+    for Julia's benefit.
+    """
+    with rasterio.open(resistance_path) as src:
+        original = src.read(1)
+        meta = src.meta.copy()
+        invalid = nodata_mask(src, original)
+
+    # Class IDs arrive as Byte or Int16; resistance values are Double.
+    original = original.astype(np.float64)
+
+    # Collapsing the table into a dict gives last-row-wins for free, including
+    # across a mix of -9999 and real values, which a per-row mask loop gets
+    # wrong unless it also tracks and clears an earlier row's "missing".
+    mapping = {}
+    for _, row in reclass_table.iterrows():
+        mapping[float(row["landCover"])] = float(row["resistanceValue"])
+
+    codes = np.fromiter(mapping.keys(), dtype=np.float64, count=len(mapping))
+    values = np.fromiter(mapping.values(), dtype=np.float64, count=len(mapping))
+    order = np.argsort(codes)
+    codes, values = codes[order], values[order]
+
+    # One O(n log k) pass, rather than a full-array pass per table row.
+    idx = np.clip(np.searchsorted(codes, original), 0, len(codes) - 1)
+    matched = (codes[idx] == original) & ~invalid
+
+    # Every class in the raster must have a row. The test is a free pass over
+    # an array we already have; the np.unique needed to name the offenders only
+    # runs when there is an error to explain.
+    stranded = ~matched & ~invalid
+    if stranded.any():
+        missing = sorted(np.unique(original[stranded]).tolist())
+        missing = [int(code) if float(code).is_integer() else code
+                   for code in missing]
+        sys.exit(
+            "'Reclass Table' has no entry for land cover class ID(s) "
+            f"{missing}, which are present in the resistance raster. Every "
+            "class in the raster must have a row. Add a row mapping it to a "
+            "resistance value, or to -9999 if it should be NoData.")
+
+    reclassified = np.where(matched, values[idx], original)
+    invalid |= matched & (values[idx] == NODATA_VALUE)
+    reclassified[invalid] = NODATA_VALUE
+
+    # float64 rather than float32: resistanceValue is a Double, and a float32
+    # round trip moves a value like 0.1 by ~1e-8, which is enough to flip an
+    # exact comparison against r_cutoff or source_threshold in Omniscape.
+    # -9999 rather than NaN for no-data: apply_resistance_modifier restores
+    # no-data with an == comparison, which NaN never satisfies, and
+    # merge_tile_outputs hardcodes -9999 as its source nodata.
+    meta.update(driver="GTiff", count=1, dtype="float64",
+                nodata=NODATA_VALUE, compress="lzw")
+    with rasterio.open(output_path, "w", **meta) as dst:
+        dst.write(reclassified, 1)
+
+    return output_path
+
+
+# ============================================================================
 # RESISTANCE MODIFIER
 # ============================================================================
 
 def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
-                               focal_radius=None, focal_function="mean", output_path=None):
+                               focal_radius=None, focal_function="mean", output_path=None,
+                               default_multiplier=1.0):
     """
     Multiply resistance values by a per-pixel multiplier derived from a secondary raster.
 
     For each pixel:
       1. Read modifier raster value (optionally aggregated via focal window first)
-      2. Look up multiplier: first range where minValue <= value < maxValue
+      2. Look up the multiplier: the one range where minValue <= value < maxValue
       3. Multiply resistance by that multiplier (pixels matching no range use 1.0)
+
+    Ranges are half-open and may not overlap - the caller validates that with
+    validate_threshold_bands, so each value falls in at most one band and the
+    order rows are applied in cannot matter. Gaps between bands are allowed and
+    mean "leave this range alone": a pixel in no band keeps default_multiplier,
+    normally 1.0.
+
+    default_multiplier exists for Proportional rescaling, which divides the
+    whole surface by a constant. That constant folds into the lookup
+    multipliers, but pixels matching no band would otherwise keep a literal 1.0
+    and escape the division, so the caller passes the constant here too.
+
+    By the time this runs the resistance raster holds resistance values, not
+    land cover class IDs - apply_reclass_table has already run if the scenario
+    asked for reclassification. Multiplying is only meaningful on that scale.
 
     The modifier raster must share the CRS of the resistance raster. In tiled mode the
     full modifier raster path is passed and windowed reading clips it to the tile extent.
@@ -651,7 +770,8 @@ def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
         elif fn == "min":
             modifier_data = np.nanmin(windows, axis=(-2, -1))
 
-    multiplier_array = np.ones_like(resistance_data, dtype=np.float64)
+    multiplier_array = np.full_like(resistance_data, default_multiplier,
+                                    dtype=np.float64)
     for _, row in modifier_table.iterrows():
         mask = (~mod_mask) & (modifier_data >= row['minValue']) & (modifier_data < row['maxValue'])
         multiplier_array[mask] = float(row['multiplier'])
@@ -663,8 +783,126 @@ def apply_resistance_modifier(resistance_path, modifier_path, modifier_table,
     if output_path is None:
         output_path = resistance_path.replace('.tif', '_modified.tif')
 
-    res_meta.update(dtype='float32', compress='lzw')
+    # float64 for the same reason apply_reclass_table writes it: a float32
+    # round trip moves a value enough to flip an exact comparison against
+    # r_cutoff in Omniscape, and rescaling multiplies by a non-round constant.
+    res_meta.update(dtype='float64', compress='lzw')
     with rasterio.open(output_path, 'w', **res_meta) as dst:
-        dst.write(modified.astype(np.float32), 1)
+        dst.write(modified.astype(np.float64), 1)
+
+    return output_path
+
+
+# ============================================================================
+# RESISTANCE RESCALING
+# ============================================================================
+
+RESCALING_NAMES = {0: "Exact", 1: "Proportional", 2: "Cap", 3: "Min-max"}
+
+
+def max_effective_multiplier(modifier_table):
+    """Largest multiplier a pixel can pick up from one modifier's lookup table.
+
+    Floored at 1.0 because a pixel matching no band keeps 1.0, so the largest
+    multiplier actually in play is never below it. That floor is also why
+    Proportional rescaling never scales a surface UP: the factor is 1/M with
+    M >= 1, so a set of modifiers that only reduce resistance leaves the surface
+    where it is rather than inflating it to meet the reference maximum.
+
+    Derived from the table alone, never from pixels. Tiles are processed in
+    separate OS processes under multiprocessing, so a factor measured from one
+    tile's own values would differ between tiles and leave seams where they meet.
+    """
+    if modifier_table.empty:
+        return 1.0
+    return max(1.0, float(modifier_table["multiplier"].max()))
+
+
+def min_effective_multiplier(modifier_table):
+    """Smallest multiplier a pixel can pick up from one modifier's lookup table.
+
+    Capped at 1.0, the mirror of max_effective_multiplier: a pixel matching no
+    band keeps 1.0, so the smallest multiplier in play is never above it. Used
+    by Min-max rescaling to know where the modified range starts.
+    """
+    if modifier_table.empty:
+        return 1.0
+    return min(1.0, float(modifier_table["multiplier"].min()))
+
+
+def apply_rescaling(resistance_path, mode, output_path,
+                    reference_max, reference_min=None,
+                    total_max_multiplier=1.0, total_min_multiplier=1.0,
+                    is_conductance=False):
+    """Bring a modified resistance surface back to its reference maximum.
+
+    Modifiers multiply, so a reclass table topping out at 32 and a x2 modifier
+    give 64 - outside the range the table was calibrated on. The modes:
+
+      Cap      out = min(x, reference_max). Pixels no modifier touched come out
+               untouched; pixels pushed past the ceiling flatten onto it, which
+               is a true statement when the ceiling already means impermeable.
+      Min-max  affine map of the modified range onto [reference_min,
+               reference_max]. Both ends land exactly. Note that resistance is a
+               ratio scale - "twice as resistant" is meaningful - and an affine
+               map with an offset does not preserve that.
+
+    Exact and Proportional never reach here: Exact does nothing, and
+    Proportional is a global constant the caller folds into the lookup
+    multipliers instead, so it costs no pass over the raster at all.
+
+    Every bound is a global constant taken from the datasheets - reference_max
+    and reference_min from the Reclass Table, the multiplier totals from the
+    lookup tables - so all of them are identical in every tile and every
+    parallel job. Nothing here may be derived from pixel statistics: tiles run
+    in separate OS processes under multiprocessing, so a bound measured from one
+    tile's values would differ between tiles and leave seams where they meet.
+
+    A conductance surface is inverted to resistance, rescaled, and inverted
+    back. Working on conductance directly would be wrong for Min-max, because an
+    affine map in resistance space is not an affine map in conductance space.
+    """
+    with rasterio.open(resistance_path) as src:
+        data = src.read(1).astype(np.float64)
+        meta = src.meta.copy()
+        invalid = nodata_mask(src, data)
+
+    valid = ~invalid
+
+    if valid.any():
+        # Rescale in resistance terms whatever the surface happens to hold. The
+        # placeholder 1.0 keeps no-data out of the arithmetic, including the
+        # reciprocal; those pixels are restored below.
+        work = np.where(valid, data, 1.0)
+        if is_conductance:
+            work = 1.0 / work
+
+        if mode == "Cap":
+            work = np.minimum(work, reference_max)
+        elif mode == "Min-max":
+            lo_in = reference_min * total_min_multiplier
+            hi_in = reference_max * total_max_multiplier
+            if hi_in != lo_in:
+                work = (reference_min
+                        + (work - lo_in) * (reference_max - reference_min)
+                        / (hi_in - lo_in))
+            # else: no range to stretch, so leave it rather than divide by
+            # zero - the same guard standardize_min_max makes.
+        else:
+            raise ValueError(f"apply_rescaling does not handle mode {mode!r}")
+
+        if is_conductance:
+            work = 1.0 / work
+
+        rescaled = np.where(valid, work, data)
+    else:
+        rescaled = data
+
+    rescaled[invalid] = NODATA_VALUE
+
+    meta.update(driver="GTiff", count=1, dtype="float64",
+                nodata=NODATA_VALUE, compress="lzw")
+    with rasterio.open(output_path, "w", **meta) as dst:
+        dst.write(rescaled, 1)
 
     return output_path
