@@ -31,6 +31,7 @@ from helperFunctions import (
     apply_rescaling,
     max_effective_multiplier,
     min_effective_multiplier,
+    max_resistance_multiplier,
     resolve_list_option,
     RESCALING_NAMES
 )
@@ -538,6 +539,8 @@ multiprocessing = multiprocessing.replace({'Yes': 'true', 'No': 'false'})
 resistanceModifiers = resistanceModifiers.replace({'Yes': 'true', 'No': 'false'})
 resistanceModifierOptions = resistanceModifierOptions.replace({'Yes': 'true', 'No': 'false'})
 
+isConductance = generalOptions.resistanceIsConductance.item() == "true"
+
 
 # Keep "multiply resistance" meaning that under conductance ------------------
 
@@ -548,7 +551,7 @@ resistanceModifierOptions = resistanceModifierOptions.replace({'Yes': 'true', 'N
 # keeps the datasheet honest. 1.0 is a fixed point, so the usual case is
 # untouched, and the column is validated greater than 0 so this cannot divide
 # by zero.
-if applyModifier and generalOptions.resistanceIsConductance.item() == "true":
+if applyModifier and isConductance:
     resistanceModifierTable = resistanceModifierTable.copy()
     resistanceModifierTable["multiplier"] = 1.0 / resistanceModifierTable["multiplier"]
     ps.environment.update_run_log(
@@ -563,10 +566,17 @@ if applyModifier and generalOptions.resistanceIsConductance.item() == "true":
 # separate OS processes under multiprocessing, so a bound measured from one
 # tile's values would differ between tiles and leave seams where they meet.
 
+# totalMaxMultiplier and totalMinMultiplier stay in whatever space the
+# datasheets are written in, because apply_rescaling converts them itself.
+# totalResistanceMultiplier is the odd one out: Proportional and r_cutoff both
+# need a factor expressed in RESISTANCE terms, and neither goes through
+# apply_rescaling, so it is converted here where it is derived.
+
 referenceMax = None
 referenceMin = None
 totalMaxMultiplier = 1.0
 totalMinMultiplier = 1.0
+totalResistanceMultiplier = 1.0
 
 if applyRescaling:
     if applyReclass:
@@ -598,16 +608,18 @@ if applyRescaling:
             resistanceModifierTable['modifier'] == mod_row['Name']]
         totalMaxMultiplier *= max_effective_multiplier(mod_rows)
         totalMinMultiplier *= min_effective_multiplier(mod_rows)
+        totalResistanceMultiplier *= max_resistance_multiplier(
+            mod_rows, isConductance)
 
     ps.environment.update_run_log(
         f"Rescaling: {rescaling}. Reference range [{referenceMin}, {referenceMax}] "
         f"from the {'Reclass Table' if applyReclass else 'Resistance file'}; "
-        f"largest combined multiplier {totalMaxMultiplier}.")
+        f"largest combined resistance multiplier {totalResistanceMultiplier}.")
 
     if rescaling == "Proportional":
         ps.environment.update_run_log(
             f"  Each modifier's multipliers are normalized so its largest becomes "
-            f"1.0, which composes to a factor of {1.0 / totalMaxMultiplier} across "
+            f"1.0, which composes to a factor of {1.0 / totalResistanceMultiplier} across "
             "the chain. Every ratio between pixels is preserved, so this is a "
             "change of units: normalized current is unaffected and raw current "
             "moves only in scale.")
@@ -630,7 +642,7 @@ if rescaling == "Proportional" and applyRescaling:
     except (TypeError, ValueError):
         rawCutoff = float("inf")      # the "Inf" default needs no scaling
     if np.isfinite(rawCutoff):
-        effectiveRCutoff = rawCutoff / totalMaxMultiplier
+        effectiveRCutoff = rawCutoff / totalResistanceMultiplier
         ps.environment.update_run_log(
             f"  'R cutoff' scaled {rawCutoff} -> {effectiveRCutoff} to match, so it "
             "still excludes the same pixels it did before rescaling.")
@@ -789,16 +801,23 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             mod_table = resistanceModifierTable[resistanceModifierTable['modifier'] == mod_row['Name']]
 
             # Proportional folds into the multipliers rather than costing a pass
-            # of its own. Normalizing each modifier by its OWN largest multiplier
-            # composes to 1/totalMaxMultiplier across the chain. Pixels matching
-            # no band keep default_multiplier, so it carries the same factor or
-            # they would escape the division.
+            # of its own. Normalizing each modifier by its OWN largest resistance
+            # multiplier composes to 1/totalResistanceMultiplier across the
+            # chain. Pixels matching no band keep default_multiplier, so it
+            # carries the same factor or they would escape the division.
             default_multiplier = 1.0
             if rescaling == "Proportional":
-                modMax = max_effective_multiplier(mod_table)
+                modMax = max_resistance_multiplier(mod_table, isConductance)
                 mod_table = mod_table.copy()
-                mod_table["multiplier"] = mod_table["multiplier"] / modMax
-                default_multiplier = 1.0 / modMax
+                if isConductance:
+                    # Dividing resistance by modMax is MULTIPLYING conductance by
+                    # it, so the fold flips with the surface. Dividing here would
+                    # scale resistance the wrong way by modMax squared.
+                    mod_table["multiplier"] = mod_table["multiplier"] * modMax
+                    default_multiplier = modMax
+                else:
+                    mod_table["multiplier"] = mod_table["multiplier"] / modMax
+                    default_multiplier = 1.0 / modMax
 
             resistance_file_path = apply_resistance_modifier(
                 resistance_path=resistance_file_path,
@@ -835,7 +854,7 @@ for tile_idx, tile_id in enumerate(tiles_to_process):
             reference_min=referenceMin,
             total_max_multiplier=totalMaxMultiplier,
             total_min_multiplier=totalMinMultiplier,
-            is_conductance=generalOptions.resistanceIsConductance.item() == "true"
+            is_conductance=isConductance
         )
         ps.environment.update_run_log(
             f"Rescaled resistance ({rescaling}) → {rescale_output_path}")

@@ -830,6 +830,32 @@ def min_effective_multiplier(modifier_table):
     return min(1.0, float(modifier_table["multiplier"].min()))
 
 
+def max_resistance_multiplier(modifier_table, is_conductance=False):
+    """Largest factor by which one modifier's table can raise RESISTANCE.
+
+    This is the number Proportional rescaling divides the surface by, so it has
+    to be read in resistance terms whatever the surface holds.
+
+    On a resistance surface it is max_effective_multiplier outright. Under
+    conductance the caller has already inverted every multiplier (the
+    transformer's 'Keep "multiply resistance" meaning that under conductance'
+    step), so the entry that raises resistance most is the SMALLEST one, and the
+    clamp at 1.0 belongs on that end too: min_effective_multiplier caps there,
+    and its reciprocal is the resistance-space maximum floored at 1.0 - which is
+    the same rule, that Proportional never scales a surface up.
+
+    Reading max_effective_multiplier off an inverted table instead gets
+    Proportional backwards in both directions. A chain that doubles resistance
+    stores 0.5, so it returns 1.0 and nothing is normalized even though the
+    surface has overshot the reference maximum; a chain that halves resistance
+    stores 2.0, so it returns 2.0 and scales a surface that was already under
+    the ceiling - creating the overshoot Proportional exists to prevent.
+    """
+    if is_conductance:
+        return 1.0 / min_effective_multiplier(modifier_table)
+    return max_effective_multiplier(modifier_table)
+
+
 def apply_rescaling(resistance_path, mode, output_path,
                     reference_max, reference_min=None,
                     total_max_multiplier=1.0, total_min_multiplier=1.0,
@@ -861,7 +887,27 @@ def apply_rescaling(resistance_path, mode, output_path,
     A conductance surface is inverted to resistance, rescaled, and inverted
     back. Working on conductance directly would be wrong for Min-max, because an
     affine map in resistance space is not an affine map in conductance space.
+
+    Every bound arrives in the same space as the pixels, so under is_conductance
+    they are conductance too and are inverted here alongside them. Inverting
+    swaps which end is which: the largest conductance is the smallest
+    resistance, so reference_max gives the LOWER resistance bound and
+    reference_min the upper. The multiplier totals swap for the same reason. The
+    caller inverts each multiplier before combining them (the transformer's
+    'Keep "multiply resistance" meaning that under conductance' step), so
+    total_max_multiplier is the conductance-space largest and its reciprocal is
+    the resistance-space smallest. Comparing inverted pixels against
+    uninverted bounds would clamp the surface onto the wrong end of its own
+    range - and silently, since the result is still a plausible raster.
+
+    Every reciprocal here is safe: resistance values are validated greater than
+    zero before they reach this point, and so is every multiplier.
     """
+    if is_conductance and reference_min is None:
+        raise ValueError(
+            "apply_rescaling needs reference_min to convert bounds to "
+            "resistance space when is_conductance is True.")
+
     with rasterio.open(resistance_path) as src:
         data = src.read(1).astype(np.float64)
         meta = src.meta.copy()
@@ -874,17 +920,24 @@ def apply_rescaling(resistance_path, mode, output_path,
         # placeholder 1.0 keeps no-data out of the arithmetic, including the
         # reciprocal; those pixels are restored below.
         work = np.where(valid, data, 1.0)
+        lo_ref, hi_ref = reference_min, reference_max
+        lo_multiplier = total_min_multiplier
+        hi_multiplier = total_max_multiplier
         if is_conductance:
             work = 1.0 / work
+            lo_ref = 1.0 / reference_max
+            hi_ref = 1.0 / reference_min
+            lo_multiplier = 1.0 / total_max_multiplier
+            hi_multiplier = 1.0 / total_min_multiplier
 
         if mode == "Cap":
-            work = np.minimum(work, reference_max)
+            work = np.minimum(work, hi_ref)
         elif mode == "Min-max":
-            lo_in = reference_min * total_min_multiplier
-            hi_in = reference_max * total_max_multiplier
+            lo_in = lo_ref * lo_multiplier
+            hi_in = hi_ref * hi_multiplier
             if hi_in != lo_in:
-                work = (reference_min
-                        + (work - lo_in) * (reference_max - reference_min)
+                work = (lo_ref
+                        + (work - lo_in) * (hi_ref - lo_ref)
                         / (hi_in - lo_in))
             # else: no range to stretch, so leave it rather than divide by
             # zero - the same guard standardize_min_max makes.
