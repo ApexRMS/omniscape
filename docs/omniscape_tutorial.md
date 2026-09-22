@@ -150,6 +150,44 @@ The *Omniscape* pipeline stage replicates the exact structure and order of param
 
 <img align="center" style="padding: 13px" width="500" src="./images/screenshot17.png">
 
+<div class=indentation>
+  c. Navigate to the <b>Resistance Modifier</b> node. This is optional, and is left empty in this example, but it is worth knowing what it does.
+  <br>
+  <div class=indentation>
+    i. <i>Resistance Modifiers</i> – one row per secondary raster whose values should scale resistance: slope, road density, or any other continuous surface. Each row may optionally aggregate that raster through a focal window first.
+    <br><br>
+    ii. <i>Modifier Lookup Table</i> – maps ranges of a modifier raster's values to multipliers. Ranges are half-open (<i>Min modifier value</i> ≤ value &lt; <i>Max modifier value</i>) and may not overlap. Gaps are allowed and mean "leave this range alone": a pixel matching no range keeps a multiplier of 1.0.
+    <br><br>
+    iii. <i>Options > Write modified resistance</i> – determines whether the final modified resistance raster should be saved and written to file.
+    </div>
+</div>
+
+<br>
+
+**Modifiers are applied after the Reclass Table, never before.** With *Reclassify resistance* set to *Yes*, the *Resistance file* holds land cover class IDs, which are labels rather than quantities — multiplying class 41 by 1.5 gives 61.5, which is not a land cover class and is not a resistance either. The reclass table runs first, turning class IDs into resistance values, and the modifiers then scale those. So a multiplier of 3 applied to a class whose reclass value is 10 gives 30.
+
+Every land cover class present in the *Resistance file* must have a row in the *Reclass table*. A class with no row stops the run with an error naming it. This is deliberate: a class ID is a label, not a resistance, so carrying an unlisted one through into the resistance surface would mean class 95 quietly becoming "resistance 95". If a class should be excluded from the analysis, give it a row mapping it to -9999 (NoData) rather than leaving it out.
+
+One caveat if you use *General Options > Resistance is conductance*: the reclass table then yields conductance, so the multipliers are inverted internally to keep *Resistance multiplier* meaning what it says. The run log records this when it happens.
+
+<br>
+
+**Keeping the surface in range.** Because modifiers multiply, a reclass table topping out at 32 and a ×2 modifier produce 64 — outside the range the table was calibrated on. *Options > Rescaling* decides what happens then, measured against the largest *Resistance value* in the *Reclass table*:
+
+<div class=indentation>
+  i. <i>Exact</i> (the default) – no rescaling. The surface may exceed the largest value in the table.
+  <br><br>
+  ii. <i>Proportional</i> – the whole surface is divided by the largest multiplier, so the maximum returns to 32 and every ratio between pixels is preserved. Note that this is a change of units rather than of results: normalized current flow is unaffected, and raw current flow moves only in scale, with the same spatial pattern. Choose it to keep the surface on a familiar scale, not to change the answer.
+  <br><br>
+  iii. <i>Cap</i> – modified values are clamped at 32. Pixels no modifier touched are left exactly as the reclass table set them, and pixels that would have exceeded the ceiling all come out at 32. This says something real: nothing is more resistant than the most resistant land cover class.
+  <br><br>
+  iv. <i>Min-max</i> – the surface is stretched so it spans the reclass table's full range exactly. Both ends land on their original values. Be aware that resistance is a ratio scale — "twice as resistant" is meaningful — and this mode does not preserve that.
+</div>
+
+<br>
+
+Rescaling is measured from the *Reclass table* and the *Modifier Lookup Table*, never from the raster itself, so it behaves identically whether or not the run is split across tiles. The consequence is that it guarantees the surface never exceeds the maximum, rather than always landing exactly on it.
+
 <br>
 
 The *Categorize Connectivity Output* pipeline stage is an exclusive feature of the **omniscape** SyncroSim package. It allows for seamless post-processing of the continuous output of Omniscape into discrete connectivity categories based on user-defined connectivity categories, a common step in the Omniscape workflow.

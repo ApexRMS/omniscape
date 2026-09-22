@@ -17,3 +17,8 @@ omniscape
 /src/templates
 /Testing
 
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

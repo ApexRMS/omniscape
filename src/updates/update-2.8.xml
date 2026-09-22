@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<update comment="Update to omniscape 2.8 that adds ensemble connectivity and quantile-based categorization">
+<update comment="Update to omniscape 2.8 that adds ensemble connectivity, quantile-based categorization, and resistance modifier rescaling">
 
     <!-- Record the break values actually used for each connectivity category.
          In Value mode these repeat the Category Thresholds; in the new Quantile
@@ -18,6 +18,16 @@
     </action>
 
     <action code="RenameChartVariable" oldVariableName="outputTabularReclassificationPercentCover" newVariableName="outputTabularReclassificationProportionCover">
+    </action>
+
+    <!-- Controls how a modified resistance surface is brought back to the
+         largest value in the Reclass Table, now that resistance modifiers are
+         applied after reclassification and so scale real resistance values
+         rather than land cover class IDs. 0 is Exact, which is the behaviour
+         every existing Scenario already has, so leaving the column null
+         changes nothing. -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_ResistanceModifierOptions">
+        <item>ALTER TABLE omniscape_ResistanceModifierOptions ADD COLUMN rescaling INTEGER</item>
     </action>
 
 </update>
