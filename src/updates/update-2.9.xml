@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<update comment="Update to omniscape 2.9 that lets ensembles combine Scenarios of different extents, standardizes them by percentile rank, and stops ensemble results carrying the omniscape outputs of a dependency">
+
+    <!-- An ensemble result used to inherit a copy of one dependency's omniscape
+         outputs (cumulative current, normalized current, resistance) through the
+         dependency merge, so a single species' current maps were presented as
+         the ensemble's own results. The Ensemble Connectivity transformer now
+         clears them itself; this removes the copies from ensemble results that
+         were produced before it did.
+
+         Only the omniscape_outputSpatial row is removed, and only in Scenarios
+         holding an ensemble raster. The dependency Scenarios keep their own
+         outputs untouched.
+
+         No schema changes: the switch from min-max to percentile-rank
+         standardization reuses the existing 'Standardize inputs' option.
+         Ensemble results produced before this update keep their min-max values
+         until the ensemble is run again. -->
+    <action code="Exec" condition="TableExists" criteria="omniscape_outputSpatialEnsemble">
+        <item>DELETE FROM omniscape_outputSpatial WHERE ScenarioId IN (SELECT ScenarioId FROM omniscape_outputSpatialEnsemble WHERE ensembleRaster IS NOT NULL)</item>
+    </action>
+
+</update>

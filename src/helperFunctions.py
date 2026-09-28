@@ -940,7 +940,7 @@ def apply_rescaling(resistance_path, mode, output_path,
                         + (work - lo_in) * (hi_ref - lo_ref)
                         / (hi_in - lo_in))
             # else: no range to stretch, so leave it rather than divide by
-            # zero - the same guard standardize_min_max makes.
+            # zero.
         else:
             raise ValueError(f"apply_rescaling does not handle mode {mode!r}")
 
