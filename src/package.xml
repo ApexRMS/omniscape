@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.8.0" minSyncroSimVersion="3.1.0">
+<package name="omniscape" displayName="Omniscape" description="Omni-directional habitat connectivity based on circuit theory" url="https://apexrms.github.io/omniscape/" version="2.9.0" minSyncroSimVersion="3.1.0">
 
       <dataSheet name="movementTypes" displayName="Connectivity Categories" dataScope="Project" displayMember="Name">
           <column name="Name" dataType="String" />
@@ -127,13 +127,13 @@
           <column name="movementTypesID" displayName="Connectivity category" dataType="Integer" validationType="Datasheet" formula1="movementTypes" allowDbNull="False" />
           <column name="minBreakValue" displayName="Minimum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Lower bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
           <column name="maxBreakValue" displayName="Maximum value" dataType="Double" validationType="Decimal" validationCondition="None" isOptional="True" description="Upper bound actually used for this category, computed from the run's distribution when Threshold type is Quantile." />
-          <column name="amountArea" displayName="Area" dataType="Double" validationType="Decimal" validationCondition="None" />
+          <column name="amountArea" displayName="Area (ha)" dataType="Double" validationType="Decimal" validationCondition="None" description="Area of this category in hectares: pixel count times cell area, divided by 10,000. Assumes the raster's map units are metres; for rasters in other units (e.g. degrees or feet) the value is not in hectares." />
           <column name="proportionCover" displayName="Proportion of area" dataType="Double" validationType="Decimal" validationCondition="None" description="Share of the classified surface's valid pixels falling in this category, as a proportion between 0 and 1." />
       </dataSheet>
 
       <dataSheet name="ensembleOptions" displayName="Ensemble Options" isSingleRow="True">
           <column name="combinationFunction" displayName="Combination function" dataType="Integer" validationType="List" formula1="0:Weighted Mean|1:Weighted Sum|2:Maximum|3:Minimum" isOptional="True" defaultValue="0" description="How the dependency Scenarios' normalized current maps are combined. Maximum and Minimum ignore the weights." />
-          <column name="standardizeInputs" displayName="Standardize inputs" dataType="Boolean" isOptional="True" defaultValue="-1" description="Rescale each Scenario's normalized current to 0-1 (over its full valid extent) before combining, so Scenarios are comparable." />
+          <column name="standardizeInputs" displayName="Standardize inputs" dataType="Boolean" isOptional="True" defaultValue="-1" description="Rescale each Scenario's normalized current to 0-1 by percentile rank (over its full valid extent) before combining, so Scenarios are comparable regardless of their value ranges or outlying hotspots." />
           <column name="useFocalWindow" displayName="Use focal window" dataType="Boolean" isOptional="True" defaultValue="0" description="Smooth the combined ensemble with a square moving window before classification." />
           <column name="focalRadius" displayName="Focal radius (pixels)" dataType="Integer" validationType="WholeNumber" validationCondition="Greater" formula1="0" isOptional="True" description="Radius in pixels for the focal window. Required when Use focal window is enabled." />
           <column name="focalFunction" displayName="Focal function" dataType="Integer" validationType="List" formula1="0:Mean|1:Sum|2:Max|3:Min" isOptional="True" defaultValue="0" />
@@ -208,7 +208,9 @@
       isMultiprocessing="False">
         <dataSheet name="ensembleOptions" type="Input" />
         <dataSheet name="ensembleWeights" type="Input" />
-        <dataSheet name="outputSpatial" type="Input" />
+        <!-- Never written. Declaring it as an output stops SyncroSim merging a
+             dependency's omniscape outputs into the ensemble result. -->
+        <dataSheet name="outputSpatial" type="Output" />
         <dataSheet name="outputSpatialEnsemble" type="Output" />
     </transformer>
 

@@ -26,8 +26,8 @@ import sys
 
 from helperFunctions import (safe_progress_bar, resolve_list_option,
                              resolve_boolean_option)
-from ensembleFunctions import (NODATA_VALUE, nodata_mask, validate_same_grid,
-                               standardize_min_max, focal_statistic, combine_layers,
+from ensembleFunctions import (NODATA_VALUE, build_union_grid, read_onto_grid,
+                               standardize_percentile_rank, focal_statistic, combine_layers,
                                read_scenario_member, resolve_ensemble_weights,
                                safe_update_run_log)
 
@@ -112,7 +112,7 @@ if len(dependencyTable) < 2:
         "dependency of this Scenario.")
 
 safe_update_run_log("Ensemble combination method: " + combinationMethod
-                    + ("; inputs standardized to 0-1" if standardizeInputs else
+                    + ("; inputs standardized to 0-1 by percentile rank" if standardizeInputs else
                        "; inputs NOT standardized")
                     + ((("; focal " + focalFunction + ", radius "
                          + repr(focalRadius) + " px") if useFocalWindow else "")) + ".")
@@ -124,10 +124,7 @@ safe_progress_bar(message="Loading dependency Scenarios", report_type="message")
 
 allScenarios = myProject.scenarios(optional = True)
 
-layerList = []
-maskList = []
-memberList = []
-referenceRaster = None
+depRasterPaths = []
 
 for depRow in dependencyTable.itertuples():
     depId = int(depRow.Id)
@@ -150,18 +147,41 @@ for depRow in dependencyTable.itertuples():
         sys.exit("A 'Normalized current' raster is required for dependency "
                  "Scenario '" + depName + "' (ID " + repr(depId) + ").")
 
-    depRaster = rasterio.open(depOutput.normalizedCumCurrmap[0])
+    depRasterPaths.append(depOutput.normalizedCumCurrmap[0])
 
-    if referenceRaster is None:
-        referenceRaster = depRaster
-    else:
-        validate_same_grid(referenceRaster, depRaster, "Normalized current ('" + depName + "')")
+# Each species is usually run over its own dispersal window, so the dependencies
+# need not share an extent. The ensemble covers their union, and each Scenario
+# contributes only where it has data.
+depRasters = [rasterio.open(p) for p in depRasterPaths]
+referenceMeta = depRasters[0].meta.copy()
 
-    depData = depRaster.read(1).astype(float)
-    depMask = nodata_mask(depRaster, depData)
+gridTransform, gridHeight, gridWidth, extentsDiffer = build_union_grid(
+    depRasters, "Normalized current")
+
+if extentsDiffer:
+    safe_update_run_log(
+        "Dependency extents differ; the ensemble covers their union ("
+        + repr(gridWidth) + " x " + repr(gridHeight) + " px). Each Scenario "
+        "contributes only within its own extent.")
+
+layerList = []
+maskList = []
+memberList = []
+
+for depRow, depRaster in zip(dependencyTable.itertuples(), depRasters):
+    depId = int(depRow.Id)
+    depName = str(depRow.Name)
+
+    depData, depMask, resampled = read_onto_grid(
+        depRaster, gridTransform, gridHeight, gridWidth)
+    depRaster.close()
+
+    if resampled:
+        safe_update_run_log("'" + depName + "' was resampled (bilinear) onto "
+                            "the ensemble grid.")
 
     if standardizeInputs:
-        depData = standardize_min_max(depData, depMask)
+        depData = standardize_percentile_rank(depData, depMask)
 
     # Appended together with the layer it belongs to, so a Scenario's membership
     # cannot drift onto a different Scenario's raster.
@@ -196,8 +216,9 @@ if useFocalWindow:
 
 # Save spatial output --------------------------------------------------------------
 
-outMeta = referenceRaster.meta.copy()
-outMeta.update(count = 1, dtype = "float32", nodata = NODATA_VALUE)
+outMeta = referenceMeta
+outMeta.update(count = 1, dtype = "float32", nodata = NODATA_VALUE,
+               transform = gridTransform, height = gridHeight, width = gridWidth)
 
 ensembleOut = np.where(ensembleMask, NODATA_VALUE, ensembleData).astype("float32")
 ensemblePath = os.path.join(outputEnsemblePath, "ensemble_connectivity.tif")

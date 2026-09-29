@@ -18,60 +18,153 @@ from helperFunctions import NODATA_VALUE, nodata_mask, safe_update_run_log
 # read them as unused imports
 _REEXPORTED = (NODATA_VALUE, nodata_mask, safe_update_run_log)
 
-# How closely two rasters must be aligned before they can be combined, as a
-# fraction of one pixel. Loose enough to tolerate floating-point differences
-# between a raster merged from spatial tiles and one written in a single pass,
-# tight enough that a genuine offset of even one pixel is rejected.
+# How closely a raster must sit on the ensemble grid to be pasted in as-is, as
+# a fraction of one pixel. Loose enough to tolerate floating-point differences
+# between a raster merged from spatial tiles and one written in a single pass;
+# anything further off is resampled onto the grid instead.
 GRID_TOLERANCE_FRACTION = 0.01
 
 # What a Scenario contributes at when it has not been given a weight of its own
 DEFAULT_WEIGHT = 1.0
 
 
-def validate_same_grid(base_source, altr_source, raster_label):
-    """Exit unless two rasters describe the same pixel grid.
+def build_union_grid(sources, raster_label):
+    """Build the pixel grid covering every source raster's extent.
 
-    Combining rasters pixel-by-pixel is only meaningful if they cover the same
-    ground, at the same resolution, in the same coordinate system. The affine
-    transform is compared with a sub-pixel tolerance so that floating-point
-    noise from tile merging does not fail the check, while a genuine offset of
-    even one pixel does.
+    Each species is typically run over its own dispersal window, so the
+    Scenarios being combined rarely share an extent. The ensemble covers the
+    union of them all, on the first source's grid: its resolution, and pixel
+    edges lined up with its origin. The union is snapped outward onto that
+    grid, with a sub-pixel tolerance so that floating-point noise from tile
+    merging does not add a spurious row or column.
+
+    Rasters in different coordinate systems are rejected rather than
+    reprojected: that is almost always a setup mistake, not an intended input.
+
+    Returns (transform, height, width, extents_differ).
     """
-    if base_source.shape != altr_source.shape:
-        sys.exit(
-            "The '" + raster_label + "' rasters being combined have different "
-            "dimensions (" + repr(base_source.shape) + " and "
-            + repr(altr_source.shape) + "). All Scenarios must be run over the "
-            "same extent and resolution before they can be combined.")
+    from affine import Affine
 
-    if base_source.crs != altr_source.crs:
-        sys.exit(
-            "The '" + raster_label + "' rasters being combined use different "
-            "coordinate reference systems (" + repr(base_source.crs) + " and "
-            + repr(altr_source.crs) + "). All Scenarios must use the same "
-            "projection before they can be combined.")
+    reference = sources[0]
 
-    tolerance = GRID_TOLERANCE_FRACTION * min(
-        abs(base_source.res[0]), abs(base_source.res[1]))
-    base_transform = list(base_source.transform)[:6]
-    altr_transform = list(altr_source.transform)[:6]
+    for source in sources[1:]:
+        if source.crs != reference.crs:
+            sys.exit(
+                "The '" + raster_label + "' rasters being combined use different "
+                "coordinate reference systems (" + repr(reference.crs) + " and "
+                + repr(source.crs) + "). All Scenarios must use the same "
+                "projection before they can be combined.")
 
-    if any(abs(b - a) > tolerance for b, a in zip(base_transform, altr_transform)):
-        sys.exit(
-            "The '" + raster_label + "' rasters being combined are not aligned "
-            "to the same grid. Their pixel origins or resolutions differ by "
-            "more than " + repr(tolerance) + " map units (" + repr(base_transform)
-            + " and " + repr(altr_transform) + "). All Scenarios must be run "
-            "over the same extent and resolution before they can be combined.")
+    xres, yres = abs(reference.res[0]), abs(reference.res[1])
+    x0, y0 = reference.transform.c, reference.transform.f
+    eps = GRID_TOLERANCE_FRACTION
+
+    left = min(s.bounds.left for s in sources)
+    right = max(s.bounds.right for s in sources)
+    bottom = min(s.bounds.bottom for s in sources)
+    top = max(s.bounds.top for s in sources)
+
+    col_lo = int(np.floor((left - x0) / xres + eps))
+    col_hi = int(np.ceil((right - x0) / xres - eps))
+    row_lo = int(np.floor((y0 - top) / yres + eps))
+    row_hi = int(np.ceil((y0 - bottom) / yres - eps))
+
+    transform = Affine(xres, 0.0, x0 + col_lo * xres, 0.0, -yres, y0 - row_lo * yres)
+    height, width = row_hi - row_lo, col_hi - col_lo
+
+    # A raster on the grid with the union's own shape can only sit at its origin
+    extents_differ = any(s.shape != (height, width)
+                         or not grid_aligned(s.transform, transform)
+                         for s in sources)
+
+    return transform, height, width, extents_differ
 
 
-def standardize_min_max(raster_data, mask):
-    """Rescale a raster to 0-1 using its own min/max over all valid pixels.
+def grid_aligned(source_transform, grid_transform):
+    """Whether a raster sits on a grid at a whole-pixel offset.
 
-    Different Scenarios' normalized current maps can sit on different value
-    ranges, so each input is standardized onto a common 0-1 scale before they
-    are combined. The range is taken over the full valid extent. A constant
-    raster (max == min) standardizes to all zeros rather than dividing by zero.
+    True when the resolution matches and the origin is a whole number of
+    pixels away, within GRID_TOLERANCE_FRACTION of a pixel. Also rejects
+    rotated or sheared transforms, which cannot be pasted in directly.
+    """
+    s, g = source_transform, grid_transform
+    eps = GRID_TOLERANCE_FRACTION
+
+    if abs(s.b) > 1e-12 or abs(s.d) > 1e-12:
+        return False
+    if abs(s.a - g.a) > eps * abs(g.a) or abs(s.e - g.e) > eps * abs(g.e):
+        return False
+
+    col_off = (s.c - g.c) / g.a
+    row_off = (s.f - g.f) / g.e
+    return abs(col_off - round(col_off)) <= eps and abs(row_off - round(row_off)) <= eps
+
+
+def read_onto_grid(source, grid_transform, height, width):
+    """Read a raster's first band onto the ensemble grid.
+
+    No-data is resolved to NaN before anything else, so that a sentinel
+    written but undeclared in the file cannot be blended into real values by
+    resampling. Pixels of the grid outside the raster's extent are no-data:
+    "not known here", which combine_layers already treats as absent rather
+    than as zero connectivity.
+
+    A raster already on the grid at a whole-pixel offset, and fitting inside
+    it, is pasted in with its values unchanged. Anything else - a different
+    cell size, an origin off by part of a pixel, or a near-matching cell size
+    that leaves it a pixel too wide for the grid - is resampled bilinearly
+    onto the grid.
+
+    Returns (data, mask, resampled).
+    """
+    data = source.read(1).astype(float)
+    data[nodata_mask(source, data)] = np.nan
+
+    out = np.full((height, width), np.nan)
+
+    aligned = grid_aligned(source.transform, grid_transform)
+    if aligned:
+        col_off = int(round((source.transform.c - grid_transform.c) / grid_transform.a))
+        row_off = int(round((source.transform.f - grid_transform.f) / grid_transform.e))
+
+    # grid_aligned tolerates a slightly different cell size, so an aligned
+    # raster can still span more pixels than the grid gives it room for (200
+    # columns at 0.995 of a pixel end 199 grid pixels along). Resample rather
+    # than clip, which would silently drop its edge pixels.
+    if (aligned and 0 <= row_off and 0 <= col_off
+            and row_off + data.shape[0] <= height
+            and col_off + data.shape[1] <= width):
+        out[row_off:row_off + data.shape[0], col_off:col_off + data.shape[1]] = data
+        resampled = False
+    else:
+        from rasterio.warp import reproject, Resampling
+        reproject(
+            source = data, destination = out,
+            src_transform = source.transform, src_crs = source.crs,
+            dst_transform = grid_transform, dst_crs = source.crs,
+            src_nodata = np.nan, dst_nodata = np.nan,
+            resampling = Resampling.bilinear)
+        resampled = True
+
+    return out, np.isnan(out), resampled
+
+
+def standardize_percentile_rank(raster_data, mask):
+    """Rescale a raster to 0-1 by each pixel's percentile rank among its valid pixels.
+
+    Different Scenarios' normalized current maps sit on very different value
+    ranges, and their maxima are isolated hotspots: a layer whose 99th
+    percentile is 4 can peak at 45. Dividing by that peak, as min-max scaling
+    does, squashes almost the whole layer towards zero - and by a different
+    amount for every species - so where species' extents differ, the ensemble
+    shows the scaling of whichever layers happen to cover each area rather
+    than connectivity. Ranking puts every layer on the same uniform scale
+    regardless of its outliers or its value range.
+
+    A pixel's rank is the fraction of the layer's other valid pixels that are
+    strictly lower, so the lowest value (typically zero current) maps to 0 and
+    the highest to 1. Tied pixels share a rank. A constant raster ranks to all
+    zeros.
     """
     data = raster_data.astype(float)
     valid = data[~mask]
@@ -79,12 +172,12 @@ def standardize_min_max(raster_data, mask):
     if valid.size == 0:
         return data
 
-    lo, hi = valid.min(), valid.max()
+    if valid.size == 1:
+        data[~mask] = 0.0
+        return data
 
-    if hi == lo:
-        data = np.where(mask, data, 0.0)
-    else:
-        data = (data - lo) / (hi - lo)
+    ordered = np.sort(valid)
+    data[~mask] = np.searchsorted(ordered, valid, side = "left") / (valid.size - 1)
 
     return data
 
