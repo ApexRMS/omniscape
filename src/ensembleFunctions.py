@@ -109,9 +109,11 @@ def read_onto_grid(source, grid_transform, height, width):
     "not known here", which combine_layers already treats as absent rather
     than as zero connectivity.
 
-    A raster already on the grid at a whole-pixel offset is pasted in with its
-    values unchanged. Anything else - a different cell size, or an origin off
-    by part of a pixel - is resampled bilinearly onto the grid.
+    A raster already on the grid at a whole-pixel offset, and fitting inside
+    it, is pasted in with its values unchanged. Anything else - a different
+    cell size, an origin off by part of a pixel, or a near-matching cell size
+    that leaves it a pixel too wide for the grid - is resampled bilinearly
+    onto the grid.
 
     Returns (data, mask, resampled).
     """
@@ -120,9 +122,18 @@ def read_onto_grid(source, grid_transform, height, width):
 
     out = np.full((height, width), np.nan)
 
-    if grid_aligned(source.transform, grid_transform):
+    aligned = grid_aligned(source.transform, grid_transform)
+    if aligned:
         col_off = int(round((source.transform.c - grid_transform.c) / grid_transform.a))
         row_off = int(round((source.transform.f - grid_transform.f) / grid_transform.e))
+
+    # grid_aligned tolerates a slightly different cell size, so an aligned
+    # raster can still span more pixels than the grid gives it room for (200
+    # columns at 0.995 of a pixel end 199 grid pixels along). Resample rather
+    # than clip, which would silently drop its edge pixels.
+    if (aligned and 0 <= row_off and 0 <= col_off
+            and row_off + data.shape[0] <= height
+            and col_off + data.shape[1] <= width):
         out[row_off:row_off + data.shape[0], col_off:col_off + data.shape[1]] = data
         resampled = False
     else:
