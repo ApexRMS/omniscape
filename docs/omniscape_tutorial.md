@@ -129,7 +129,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot15.png">
 
-> **Note:** *Calculate normalized current* and *Calculate flow potential* default to *No*. The *Normalized current flow* map is only produced when *Calculate normalized current* is set to *Yes*, and both the *2 - Categorize Connectivity Output* and *1.5 - Ensemble Connectivity* stages require it. If you create a scenario from scratch rather than copying one from the template library, remember to set both to *Yes*.
+> **Note:** *Calculate normalized current* and *Calculate flow potential* default to *No*. The *Normalized current flow* map is only produced when *Calculate normalized current* is set to *Yes*, and both the *2 - Categorize Connectivity Output* and *1.5 - Ensemble Connectivity* stages require it. If you create a scenario from scratch rather than copying one from the template library, remember to set *Calculate normalized current* to *Yes* and set *Calculate flow potential* to *Yes* when you require that map.
 
 <div class=indentation>
   The remaining <i>General Options</i> mirror those of Omniscape.jl and are left at their defaults in this example:
