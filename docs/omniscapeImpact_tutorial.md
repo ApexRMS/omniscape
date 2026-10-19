@@ -14,25 +14,25 @@ permalink: tutorials/omniscapeImpact
 
 ## **Measuring the impact of connectivity change with omniscapeImpact**
 
-This tutorial guides you through using the **omniscapeImpact** package, which extends **omniscape SyncroSim**. It covers the following steps:
+This tutorial guides you through using the **omniscapeImpact** package, which extends **omniscape** SyncroSim. It covers the following steps:
 
 1. <A href="#step-1">Installing the omniscapeImpact package</A>
-2. <A href="#step-2">Creating and configuring an omniscapeImpact SyncroSim Library</A>
+2. <A href="#step-2">Creating and configuring an omniscapeImpact SyncroSim library</A>
 3. <A href="#step-3">Visualizing and comparing scenario results</A>
 
 <br>
 
 ### **Requirements**
 
-Before you begin, make sure that the **omniscape** SyncroSim package version 2.8.0 is installed, along with SyncroSim version 3.1.0 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
+Before you begin, make sure that the **omniscape** SyncroSim package version 2.9.0 or greater is installed, along with SyncroSim version 3.1.0 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started#installing-the-omniscape-syncrosim-package">Installing the **omniscape** SyncroSim package</A>.
 
 > **Note:** **omniscapeImpact** shares its Conda environment with **omniscape**, so **omniscape** must be installed and its Conda environment created first.
 
-The Baseline and Alternative Scenarios being compared must be directly comparable:
+The *Baseline* and *Alternative* scenarios being compared must be directly comparable:
 
-* Their output rasters must have the same extent, resolution and projection. Where their valid (non-NoData) areas differ, only the pixels valid in both Scenarios are compared, and the run log reports how many pixels were excluded.
-* Both must be the same kind of Scenario: either two single-model **omniscape** Scenarios, compared by their *Normalized current flow*, or two ensemble Scenarios, compared by their *Ensemble connectivity*. A single-model Scenario cannot be compared with an ensemble.
-* The connectivity category outputs are only produced if both Scenarios were classified using the same break values. If they used different *Category Thresholds*, or used *Quantile* thresholds that worked out to different break values, the connectivity category outputs are skipped and only the continuous comparison is produced.
+* Their output rasters must have the same extent, resolution, and projection. Where their valid (non-NoData) areas differ, only the pixels valid in both scenarios are compared, and the **Run Log** reports how many pixels were excluded.
+* Both must be the same kind of scenario: either two single-model **omniscape** scenarios, compared by their *Normalized current flow*, or two ensemble scenarios, compared by their *Ensemble connectivity*. A single-model scenario cannot be compared with an ensemble.
+* The connectivity category outputs are only produced if both scenarios were classified using the same break values. If they used different *Category Thresholds*, or used *Quantile* thresholds that worked out to different break values, the connectivity category outputs are skipped and only the continuous comparison is produced.
 
 <br>
 
@@ -52,9 +52,7 @@ The Baseline and Alternative Scenarios being compared must be directly comparabl
 
 <img align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot45.png">
 
-5\.	The **omniscapeImpact** package uses Conda to manage the package dependencies. If you are prompted to create or update the Conda environment, click **Yes**.
-
-<img align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot46.png">
+5\.	The **omniscapeImpact** package uses the Omniscape Conda environment to manage the package dependencies. If you are prompted to create or update the Conda environment, click **Yes**.
 
 6\.	Return to the *Packages* window. **omniscapeImpact** will now be listed along with the other installed packages.
 
@@ -62,21 +60,19 @@ The Baseline and Alternative Scenarios being compared must be directly comparabl
 
 <br>
 
-<p id="step-2"> <h3><b>Step 2. Creating and configuring an omniscapeImpact SyncroSim Library</b></h3> </p>
+<p id="step-2"> <h3><b>Step 2. Creating and configuring an omniscapeImpact SyncroSim library</b></h3> </p>
 
-1\.	Open SyncroSim Studio.
+1\.	To download the **omniscapeImpact** template library, select **File > New > From Online Template...**.
 
-2\.	To download the omniscapeImpact template library, select **File > New > From Online Template...**.
-
-<img align="center" style="padding: 13px" width="250" src="./tutorials/images/screenshot48.png">
+<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot48.png">
 
 <div class=indentation>
-  a.	From the list of packages, select <b>omniscape</b>.
+  a.	From the list of packages, select <b>omniscapeImpact</b>.
   <br><br>
   b.	Select the <b>Omniscape Impact</b> template library. If desired, you may edit the <i>File name</i>, and change the <i>Folder</i> by clicking on the <i>Browse</i> button. Click <b>OK</b>.
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot49-new.png">
+<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot49.png">
 
 <br>
 
@@ -102,9 +98,9 @@ The additional scenario, <i>Decreased resistance</i>, represents the case where 
   b.	<i>Impact of decreased resistance</i> – compares the <i>Reference resistance</i> and <i>Decreased resistance</i> scenarios.
 </div>
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot52.png">
+<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot52.png">
 
-4\.	Double-click on *Impact of increased resistance* to open the scenario properties.
+4\.	Double-click on **Impact of increased resistance** to open the scenario properties.
 
 5\.	Under the **General** tab, navigate to the **Pipeline** datasheet.
 
@@ -112,7 +108,7 @@ The additional scenario, <i>Decreased resistance</i>, represents the case where 
 Note that it lists one pipeline stage, <i>3 - Connectivity Impact Assessment</i>.
 </div>
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot53.png">
+<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot53.png">
 
 6\.	Close the scenario properties and, in the *Library Explorer* window, expand the **Impact of increased resistance** scenario to expose its **Dependencies** folder.
 
@@ -124,10 +120,10 @@ The two scenarios to be compared are supplied as <i>dependencies</i> of the impa
   ii.	The <b>second</b> dependency is the <i>Alternative</i> – the changed connectivity state. For this example, it is the <i>Increased resistance</i> scenario.
 </div>
 <br>
-To swap the Baseline and Alternative, reorder the dependencies. The run log for each run records which scenario was used as which. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent valid results. If more than two dependencies are added, only the first two are used.
+To swap the <i>Baseline</i> and <i>Alternative</i>, reorder the dependencies. The <b>Run Log</b> for each run records which scenario was used as which. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent results. If more than two dependencies are added, only the first two are used.
 </div>
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot54.png">
+<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot54.png">
 
 7\.	Collapse the scenario.
 
@@ -135,11 +131,11 @@ To swap the Baseline and Alternative, reorder the dependencies. The run log for 
 
 <p id="step-3"> <h3><b>Step 3. Visualizing and comparing scenario results</b></h3> </p>
 
-The Omniscape Impact template library already contains the results for all its scenarios. In SyncroSim, the results for a scenario are organized into a Results folder, nested within its parent scenario. 
+The Omniscape Impact template library already contains the results for all its scenarios. In SyncroSim, the results for a scenario are organized into a *Results* folder, nested within its parent scenario. 
 
-1\.	In the Library Explorer window, click on the arrow beside the **Impact of increased resistance** scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
+1\.	In the *Library Explorer* window, click on the arrow beside the **Impact of increased resistance** scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot55.png">
+<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot55.png">
 
 2\.	Double-click on the results scenario to open its properties.
 
@@ -148,50 +144,50 @@ The Omniscape Impact template library already contains the results for all its s
 4\.	Under the *Spatial* node are the following outputs:
 
 <div class=indentation>
-  a.	<i>Overall</i> – represents per pixel change in normalized current flow (<i>Normalized current difference</i>) or in connectivity category (<i>Cross-category difference</i>). When two ensemble scenarios are compared, <i>Ensemble connectivity difference</i> is populated instead of <i>Normalized current difference</i>.
+  a.	<i>Overall</i> – represents per-pixel change in normalized current flow (<i>Normalized current difference</i>) or in connectivity category (<i>Cross-category difference</i>). When two ensemble scenarios are compared, <i>Ensemble connectivity difference</i> is populated instead of <i>Normalized current difference</i>.
 
-  <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot56.png">
+  <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot56.png">
   <br><br>
-  b.	<i>Per Category</i> – represents per pixel loss, gain and no change for each connectivity category.
+  b.	<i>Per Category</i> – represents per-pixel loss, gain, and no change for each connectivity category.
 
-  <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot57.png">
+  <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot57.png">
 </div>
 
 
 5\.	Under the *Tabular* node are the following outputs:
 
 <div class=indentation>
-  a.	<i>Differences Summary</i> – represents the change in area and proportion between the baseline and alternative scenarios for each connectivity category.
+  a.	<i>Differences Summary</i> – represents the change in area and proportion between the <i>Baseline</i> and <i>Alternative</i> scenarios for each connectivity category.
   <br><br>
-  b.	<i>Transitions Summary</i> – represents the change in area and proportion between the baseline and alternative scenarios for all possible transitions between connectivity categories.
+  b.	<i>Transitions Summary</i> – represents the change in area and proportion between the <i>Baseline</i> and <i>Alternative</i> scenarios for all possible transitions between connectivity categories.
   <br><br>
-  c.	<i>Jaccard Dissimilarity</i> – represents the dissimilarity between the baseline and alternative scenarios for each connectivity category. For each connectivity category, the Jaccard Dissimilarity is calculated as 1 minus the ratio between the number of shared pixels across scenarios and the total number of pixels across scenarios.
+  c.	<i>Jaccard Dissimilarity</i> – represents the dissimilarity between the <i>Baseline</i> and <i>Alternative</i> scenarios for each connectivity category. For each connectivity category, the Jaccard dissimilarity is calculated as 1 minus the ratio between the number of pixels in that category in both scenarios and the number of pixels in that category in either scenario.
 </div>
 
 <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot58.png">
 
-6\.	Close the scenario properties and collapse the results and scenario folder.
+6\.	Close the scenario properties and collapse the results and scenario folders.
 
 <div class=indentation>
-You will now visualize the tabular outputs of <b>omniscapeImpact</b>
+You will now visualize the tabular outputs of <b>omniscapeImpact</b>.
 </div>
 
-7\.	In the Library Explorer window, select the scenarios **Impact of increased resistance** and **Impact of decreased resistance**, right-click, and select **Add to Results** from the context menu. 
+7\.	In the *Library Explorer* window, select the scenarios **Impact of increased resistance** and **Impact of decreased resistance**, right-click, and select **Add to Results** from the context menu. 
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot59.png">
+<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot59.png">
 
-8\.	Navigate to the **Charts** tab and, double-click the **Area difference** chart. 
+8\.	Navigate to the **Charts** tab and double-click the **Area difference** chart. 
 
 <img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot60.png">
 
 <div class=indentation>
 Note that the two scenarios had opposite effects on connectivity. 
 <br><br>
-The Increased resistance scenario led to an increase in area for <i>Impeded</i> and <i>Channelized</i> and a decrease in area for <i>Diffuse</i> and <i>Intensified</i>, relative to the Reference scenario. 
+The <i>Increased resistance</i> scenario led to an increase in area for <i>Impeded</i> and <i>Channelized</i> and a decrease in area for <i>Diffuse</i> and <i>Intensified</i>, relative to the <i>Reference resistance</i> scenario. 
 <br><br>
-The Decreased resistance scenario led to a decrease in area for <i>Impeded</i> and <i>Channelized</i> and an increase in area for <i>Diffuse</i> and <i>Intensified</i>, relative to the Reference scenario. 
+The <i>Decreased resistance</i> scenario led to a decrease in area for <i>Impeded</i> and <i>Channelized</i> and an increase in area for <i>Diffuse</i> and <i>Intensified</i>, relative to the <i>Reference resistance</i> scenario. 
 <br><br>
-Note also that the magnitude of change in area was larger under the Decreased resistance scenario.
+Note also that the magnitude of change in area was larger under the <i>Decreased resistance</i> scenario.
 <br><br>
 A <b>Proportion difference</b> chart is also available, summarizing the same change as a proportion of the total area.
 </div>
@@ -201,7 +197,7 @@ A <b>Proportion difference</b> chart is also available, summarizing the same cha
 <img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot61.png">
 
 <div class=indentation>
-Note that a similar pattern is reflected here, with <i>Impact of decreased resistance</i> showing greater dissimilarity to the baseline scenario compared to <i>Impact of increased resistance</i>.
+Note that a similar pattern is reflected here, with <i>Impact of decreased resistance</i> showing greater dissimilarity to the <i>Baseline</i> scenario compared to <i>Impact of increased resistance</i>.
 </div>
 
 <br>
@@ -211,21 +207,21 @@ Next, for a visual confirmation of the quantitative changes summarized by area a
 10\.	Navigate to the **Maps** tab and, under **Impact Assessment**, double-click to open the **Normalized current difference** and **Cross-category difference** maps.
 
 <div class=indentation>
-The <i>Normalized current difference</i> summarizes continuous change in current between the baseline and alternative scenarios.
+The <i>Normalized current difference</i> summarizes continuous change in current between the <i>Baseline</i> and <i>Alternative</i> scenarios.
 
 <img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62a.png">
 <br><br>
-In turn, the <i>Cross-category difference</i> map highlights pixels where the change in current represented a change in connectivity category. For example, a change from <i>Impeded</i> to <i>Diffuse</i> would represent a <i>1 category gain</i>, while a change from <i>Channelized</i> to <i>Diffuse</i> would represent a <i>2 category loss</i>.
+In turn, the <i>Cross-category difference</i> map highlights pixels where the change in current represented a change in connectivity category. For example, a change from <i>Impeded</i> to <i>Diffuse</i> would represent a <i>1-category gain</i>, while a change from <i>Channelized</i> to <i>Diffuse</i> would represent a <i>2-category loss</i>.
 
 <img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62b.png">
 </div>
 
-11\.	Close the *Normalized current difference* and open the **Per category difference** map.
+11\.	Close the *Normalized current difference* map and open the **Per category difference** map.
 
 <img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot63.png">
 
 <div class=indentation>
-The <i>Per category difference</i> map represents per pixel losses and gains for each category. Together with the <i>Cross-category difference</i> map, it can be used to identify transitions between connectivity categories.
+The <i>Per category difference</i> map represents per-pixel losses and gains for each category. Together with the <i>Cross-category difference</i> map, it can be used to identify transitions between connectivity categories.
 <br><br>
 Both maps also highlight that a decrease in resistance had a stronger effect on connectivity than an increase.
 </div>

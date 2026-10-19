@@ -16,7 +16,7 @@ permalink: tutorials/omniscape
 
 This tutorial provides an overview of working with **omniscape** SyncroSim in SyncroSim Studio. It covers the following steps:
 
-1. <A href="#step-1">Creating and configuring an omniscape SyncroSim Library</A>
+1. <A href="#step-1">Creating and configuring an omniscape SyncroSim library</A>
 2. <A href="#step-2">Visualizing scenario results</A>
 3. <A href="#step-3">Creating, editing, and running a new scenario</A>
 4. <A href="#step-4">Comparing results across scenarios</A>
@@ -26,17 +26,17 @@ This tutorial provides an overview of working with **omniscape** SyncroSim in Sy
 
 ### **Requirements**
 
-This tutorial requires **omniscape** SyncroSim package version 2.8.0 or greater, SyncroSim version 3.1.0 or greater, and Julia version 1.9 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started">Getting started</A>.
+This tutorial requires **omniscape** SyncroSim package version 2.9.0 or greater, SyncroSim version 3.1.0 or greater, and Julia version 1.9 or greater. For more information, see <A href="https://apexrms.github.io/omniscape/getting_started">Getting started</A>.
 
 <br>
 
-<p id="step-1"> <h3><b>Step 1. Creating and configuring an omniscape SyncroSim Library</b></h3> </p>
+<p id="step-1"> <h3><b>Step 1. Creating and configuring an omniscape SyncroSim library</b></h3> </p>
 
 In SyncroSim, a library is a file with extension .ssim that stores all the model’s inputs and outputs in a format specific to a given package. To create a new library:
 
 1\.	Open SyncroSim Studio.
 
-2\.	Select **File > New > From Online Template..**.
+2\.	Select **File > New > From Online Template...**.
 
 <img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot6.png">
 
@@ -46,21 +46,21 @@ a. From the list of packages, select <b>omniscape</b>.
 b. Select the <b>Omniscape Example</b> template library. If desired, you may edit the <i>File name</i>, and change the <i>Folder</i> by clicking on the <i>Browse</i> button. Click <b>OK</b>.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot7.png">
+<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot7.png">
 
 <br>
 
-A new library has been created based on the selected template. SyncroSim will automatically open and display it in the Library Explorer window.
+A new library has been created based on the selected template. SyncroSim will automatically open and display it in the *Library Explorer* window.
 
 3\.	Double-click on the library name, **Omniscape Example**, to open the library properties window. You may also right-click on the library name and select **Open** from the context menu.
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot8.png">
+<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot8.png">
 
 4\.	The **General** tab should open automatically. In this tab, the *Summary* datasheet contains the metadata for the library.
 
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot9.png">
 
-5\.	Next, navigate to **System** tab and open the **Tools > Julia** datasheet.
+5\.	Next, navigate to the **System** tab and open the **Tools > Julia** datasheet.
 
 <div class=indentation> 
 The path to the <b>Julia executable</b> file must be specified to run <b>omniscape</b> SyncroSim. To do so, click on the <b>Browse</b> button and navigate to where Julia is installed in your computer. Its default location is <b>C:\Users\[User_Name]\AppData\Local\Programs\Julia-[version]\bin\julia.exe</b>. 
@@ -68,14 +68,14 @@ The path to the <b>Julia executable</b> file must be specified to run <b>omnisca
 
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot10.png">
 
-> **Note:** The path to the Julia executable may not contain spaces. The AppData folder is sometimes hidden. To see it, in File Explorer, select View > Show > Hidden items.
+> **Note:** The path to the Julia executable must not contain spaces. The AppData folder is sometimes hidden. To see it, in File Explorer, select View > Show > Hidden items.
 
 > **Note:** The first time a scenario is run, **omniscape** SyncroSim installs the Omniscape.jl and GDAL Julia packages automatically, so the first run takes longer than subsequent runs.
 
 6\.	Next, navigate to the datasheet under **Options > General**, and mark the checkbox for **Use conda**.
 
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot11.png">
+<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot11.png">
 
 7\.	Close the library properties window.
 
@@ -83,7 +83,7 @@ The path to the <b>Julia executable</b> file must be specified to run <b>omnisca
 
 Next, you will review the inputs of the *Reference resistance* scenario. In SyncroSim, each scenario contains the model inputs and outputs associated with a model run.
 
-1\.	In the Library Explorer window, select the pre-configured scenario **Reference resistance** and double-click it to open its properties. You may also right-click on the scenario name and select **Open** from the context menu.
+1\.	In the *Library Explorer* window, select the pre-configured scenario **Reference resistance** and double-click it to open its properties. You may also right-click on the scenario name and select **Open** from the context menu.
 
 <img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot12.png">
 
@@ -124,7 +124,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
 4\.	Navigate to the **Optional** node.
 
 <div class=indentation>
-  a.	Under the <i>General Options</i> datasheet, note that <i>Source from resistance</i> is set to <i>Yes</i>, enforcing that the sources be calculated from the resistance layer based on a threshold of 1 as defined by <i>R cutoff</i>. Also note that <i>Calculate normalized current</i> and <i>Calculate flow potential</i> are both set to <i>Yes</i>.
+  a.	In the <i>General Options</i> datasheet, note that <i>Source from resistance</i> is set to <i>Yes</i>, enforcing that the sources be calculated from the resistance layer based on a threshold of 1 as defined by <i>R cutoff</i>. Also note that <i>Calculate normalized current</i> and <i>Calculate flow potential</i> are both set to <i>Yes</i>.
 </div>
   
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot15.png">
@@ -179,9 +179,9 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   c. Navigate to the <b>Resistance Modifier</b> node. This is optional, and is left empty in this example, but it is worth knowing what it does.
   <br>
   <div class=indentation>
-    i. <i>Options</i> – Rescaling determines how the modified surface is brought back to the largest resistance value in the Reclass Table, and has four options: Exact (no rescaling, so the surface may exceed that value), Proportional (the whole surface is divided by the largest multiplier, preserving every ratio between pixels), Cap (modified values are clamped at the maximum, leaving pixels no modifier touched unchanged), and Min-Max (the surface is stretched onto the Reclass Table's full range, which does not preserve ratios between pixels). Write modified resistance determines whether the final modified resistance raster should be saved and written to file.
+    i. <i>Options</i> – <i>Rescaling</i> determines how the modified surface is brought back to the largest resistance value in the <i>Reclass Table</i>, and has four options: <i>Exact</i> (no rescaling, so the surface may exceed that value), <i>Proportional</i> (the whole surface is divided by the largest multiplier, preserving every ratio between pixels), <i>Cap</i> (modified values are clamped at the maximum, leaving pixels no modifier touched unchanged), and <i>Min-max</i> (the surface is stretched onto the <i>Reclass Table</i>'s full range, which does not preserve ratios between pixels). <i>Write modified resistance</i> determines whether the final modified resistance raster should be saved and written to file.
     <br><br>
-    ii. <i>Resistance Modifiers</i> – one row per secondary raster whose values should scale resistance: slope, road density, or any other continuous surface. Each row may optionally aggregate that raster through a focal window first, using <i>Use focal window</i>, <i>Focal radius (pixels)</i> and <i>Focal function</i> (Mean, Sum, Max or Min).
+    ii. <i>Resistance Modifiers</i> – one row per secondary raster whose values should scale resistance: slope, road density, or any other continuous surface. Each row may optionally aggregate that raster through a focal window first, using <i>Use focal window</i>, <i>Focal radius (pixels)</i>, and <i>Focal function</i> (<i>Mean</i>, <i>Sum</i>, <i>Max</i>, or <i>Min</i>).
     <br><br>
     iii. <i>Modifier Lookup Table</i> – maps ranges of a modifier raster's values to multipliers. Ranges are half-open (<i>Min modifier value</i> ≤ value &lt; <i>Max modifier value</i>) and may not overlap. Gaps are allowed and mean "leave this range alone": a pixel matching no range keeps a multiplier of 1.0.
     </div>
@@ -191,7 +191,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
 
 > **Note:** Every land cover class present in the *Resistance file* must have a row in the *Reclass Table*, otherwise the run stops with an error. To exclude a class from the analysis, map it to -9999 (NoData). Resistance values must otherwise be greater than 0.
 
-> **Note:** If *General Options > Resistance is conductance* is set to *Yes*, the *Reclass Table* yields conductance values. The multipliers are then inverted internally, so a *Resistance multiplier* of 2 still doubles resistance. The run log records when this happens.
+> **Note:** If *General Options > Resistance is conductance* is set to *Yes*, the *Reclass Table* yields conductance values. The multipliers are then inverted internally, so a *Resistance multiplier* of 2 still doubles resistance. The **Run Log** records when this happens.
 
 <br>
 
@@ -199,7 +199,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   d. The remaining datasheets under the <b>Optional</b> node are also left at their defaults in this example:
   <br>
   <div class=indentation>
-    i. <i>Tiling Options</i> – controls how the landscape is split into tiles when the <i>0 - Prepare Spatial Tiling</i> stage is used: <i>Parallelization Intensity</i> (Auto, Conservative, Balanced or Aggressive), <i>Buffer Multiplier</i> (tile overlap as a multiple of the radius), and <i>RAM per Thread (GB)</i>. For more information, see the <A href="https://apexrms.github.io/omniscape/prepMultiprocessingTransformer">spatial tiling documentation</A>.
+    i. <i>Tiling Options</i> – controls how the landscape is split into tiles when the <i>0 - Prepare Spatial Tiling</i> stage is used: <i>Parallelization Intensity</i> (<i>Auto</i>, <i>Conservative</i>, <i>Balanced</i>, or <i>Aggressive</i>), <i>Buffer Multiplier</i> (tile overlap as a multiple of the radius), and <i>RAM per Thread (GB)</i>. For more information, see the <A href="https://apexrms.github.io/omniscape/prepMultiprocessingTransformer">spatial tiling documentation</A>.
     <br><br>
     ii. <i>Output Options</i>
     <div class=indentation>
@@ -207,9 +207,9 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
       <br>
       • <i>Mask nodata</i> – whether pixels that are NoData in the <i>Resistance file</i> are also set to NoData in the outputs. Defaults to <i>Yes</i>.
       <br>
-      • <i>Write as tif</i> – whether outputs are written as GeoTIFF (.tif) files rather than ASCII grids. <b>omniscape</b> SyncroSim only reads back .tif outputs, so leave this empty or set it to <i>Yes</i>; if it is set to <i>No</i>, the outputs will not appear in the results.
+      • <i>Write as tif</i> – whether outputs are written as GeoTIFF (.tif) files rather than ASCII grids. <b>omniscape</b> SyncroSim only reads back .tif outputs, so set it to <i>Yes</i>; if it is set to <i>No</i>, the outputs will not appear in the results.
     </div>
-    <br><br>
+    <br>
     iii. <i>Ensemble Membership</i> – declares which ensemble member (typically a species) the scenario represents. This is used by the <i>1.5 - Ensemble Connectivity</i> stage and is covered in <A href="#step-5">Step 5</A>.
     <br><br>
     iv. <i>Conditional Connectivity</i> – replicates the climate and conditional connectivity options of Omniscape.jl, which restrict current flow to pairs of source and target pixels with similar conditions (for example, climate). For more information, see the <A href="https://docs.circuitscape.org/Omniscape.jl/latest/usage/#Conditional-connectivity-options">Omniscape.jl documentation</A>.
@@ -218,16 +218,16 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
       <br>
       • <i>Condition 1</i> and <i>Condition 2</i> – for each condition, a raster of the condition (<i>Condition file</i>) and how target pixels are compared with source pixels (<i>Comparison</i>). When <i>Comparison</i> is <i>within</i>, a target pixel is only connected to a source pixel if the difference between their condition values falls between the <i>lower</i> and <i>upper</i> bounds, which are then required.
       <br>
-      • <i>Future Conditions</i> – <i>Compare to future</i> sets which condition(s), if any, compare present conditions at source pixels with future conditions at target pixels: <i>none</i>, <i>1</i>, <i>2</i> or <i>both</i>. The matching <i>Condition future file</i> is required for each condition compared.
+      • <i>Future Conditions</i> – <i>Compare to future</i> sets which condition(s), if any, compare present conditions at source pixels with future conditions at target pixels: <i>none</i>, <i>1</i>, <i>2</i>, or <i>both</i>. The matching <i>Condition future file</i> is required for each condition compared.
     </div>
   </div>
 </div>
 
 <br>
 
-The *2 - Categorize Connectivity Output* pipeline stage is an exclusive feature of the **omniscape** SyncroSim package. It allows for seamless post-processing of the continuous output of Omniscape into discrete connectivity categories based on user-defined connectivity categories, a common step in the Omniscape workflow.
+The *2 - Categorize Connectivity Output* pipeline stage is an exclusive feature of the **omniscape** SyncroSim package. It allows for seamless post-processing of the continuous output of Omniscape into discrete connectivity categories based on user-defined thresholds, a common step in the Omniscape workflow.
 
-5\.	In the Library Explorer, double-click on **Definitions** to open the project properties. You may also right-click on the project name and select **Open** from the context menu. 
+5\.	In the *Library Explorer*, double-click on **Definitions** to open the project properties. You may also right-click on the project name and select **Open** from the context menu. 
 
 <img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot18.png">
 
@@ -261,14 +261,14 @@ The *2 - Categorize Connectivity Output* pipeline stage is an exclusive feature 
 
 The Omniscape Example template library already contains the results for the *Reference resistance* scenario. In SyncroSim, the results for a scenario are organized into a *Results* folder, nested within its parent scenario. 
 
-1\.	In the Library Explorer window, click on the arrow beside the *Reference resistance* scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
+1\.	In the *Library Explorer* window, click on the arrow beside the **Reference resistance** scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
 
 <img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot21.png">
 
 2\.	Double-click on the results scenario to open its properties.
 
 <div class=indentation>
-a. Click through the <b>Required</b>, <b>Optional</b> and <b>Advanced</b> nodes and note that the results scenario is a copy of the parent scenario’s inputs, which are greyed out.
+a. Click through the <b>Required</b>, <b>Optional</b>, and <b>Advanced</b> nodes and note that the results scenario is a copy of the parent scenario’s inputs, which are greyed out.
 </div> 
   
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot22.png">
@@ -310,7 +310,7 @@ You can export the tabular output by right-clicking on the data and selecting <i
 Using the SyncroSim built-in tools, you will now visualize the outputs of the first transformer.
 </div>
 
-4\.	In the Library Explorer window, right-click on the **Reference resistance** scenario and select **Add to Results** from the context menu. 
+4\.	In the *Library Explorer* window, right-click on the **Reference resistance** scenario and select **Add to Results** from the context menu. 
 
 <img align="center" style="padding: 13px" width="375" src="./tutorials/images/screenshot25.png">
 
@@ -325,12 +325,12 @@ The cumulative current flow represents the total current flowing through the lan
 <div class=indentation>
   a.	<i>Map legend</i> – displayed along the left-hand side of the window. It can be edited by double-clicking it.
   <br><br>
-  b.	<i>Toolbar</i> – displayed along the top of the window. Includes zoom, pan and per pixel information tooltip.
+  b.	<i>Toolbar</i> – displayed along the top of the window. Includes zoom, pan, and per-pixel information tooltip.
 </div>
 
 <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot27.png">
 
-6\.	Close the map window and view the two following maps.
+6\.	Close the map window and view the following two maps.
 
 <div class=indentation>
   a.	<b>Flow potential</b> represents current flow under the null condition of resistance set to 1 for the entire landscape. 
@@ -345,7 +345,7 @@ The cumulative current flow represents the total current flowing through the lan
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot29.png">
 
 <div class=indentation>
-The <b>Maps</b> tab also includes an <i>Inputs</i> group, with maps of the <i>Sources</i>, the <i>Resistance</i> surface (the <i>Classified resistance</i> output described above) and the <i>Modified resistance</i> surface. In this example, the sources are calculated from the resistance layer and no resistance modifiers are used, so only the <i>Resistance</i> map is populated.
+The <b>Maps</b> tab also includes an <i>Inputs</i> group, with maps of the <i>Sources</i>, the <i>Resistance</i> surface (the <i>Classified resistance</i> output described above), and the <i>Modified resistance</i> surface. In this example, the sources are calculated from the resistance layer and no resistance modifiers are used, so only the <i>Resistance</i> map is populated.
 </div>
 
 <br>
@@ -356,11 +356,11 @@ Next, you will visualize the outputs of the second transformer, which takes the 
 
 <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot30.png">
 
-8\.	Keep the map open for comparison and from the Library Explorer window, navigate to the **Charts** tab and view the **Area (ha)** chart. 
+8\.	Keep the map open for comparison, and from the *Library Explorer* window navigate to the **Charts** tab to view the **Area (ha)** chart. 
 
 <div class=indentation>
 Note that it summarizes the amount of area per connectivity category.
-Alternatively, a <b>Proportion of area</b> summary is also available.
+Alternatively, a <b>Proportion of area</b> summary is available.
 </div>
 
 <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot31.png">
@@ -371,14 +371,14 @@ Alternatively, a <b>Proportion of area</b> summary is also available.
 
 <p id="step-3"> <h3><b>Step 3. Creating, editing, and running a new scenario</b></h3> </p>
 
-Next, you will learn how to create a scenario and run it to generate results. This scenario will differ from the *Reference resistance* by a ten-fold increase in resistance for all non-forest (i.e., non-source) pixels. 
+Next, you will learn how to create a scenario and run it to generate results. This scenario will differ from the *Reference resistance* scenario by a tenfold increase in resistance for all non-forest (i.e., non-source) pixels. 
 
 1\.	Right-click on the existing scenario and select **Copy** from the context menu. 
 
 <img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot32.png">
 
 <div class=indentation>
-Then, right-click anywhere inside the Library Explorer window and select <b>Paste</b>
+Then, right-click anywhere inside the <i>Library Explorer</i> window and select <b>Paste</b>.
 </div>
 
 <img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot33.png">
@@ -396,7 +396,7 @@ Then, right-click anywhere inside the Library Explorer window and select <b>Past
 3\.	Navigate to the **Optional** node and under the **Resistance Reclassification** node, open the **Reclass Table** datasheet.
 
 <div class=indentation>
-  a.	Under the <b>Resistance value</b> column, increase values by one order of magnitude, except for <i>Land cover class</i> 41, 42, and 43, which represent forest classes.
+  a.	Under the <b>Resistance value</b> column, increase values by one order of magnitude, except for <i>Land cover classes</i> 41, 42, and 43, which represent forest classes.
 </div>
 
 <img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot35.png">
@@ -412,12 +412,12 @@ Next, you will enable multiprocessing for the scenario. For this example, the ru
 
 <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot36a.png">
   <br><br>
-  b. <i>From the library properties</i> – double-click on the library name, <b>Omniscape Example</b>, in the Library Explorer to open the library properties window. Navigate to the <b>System</b> tab and select <b>Multiprocessing > General</b>. Mark the checkbox for <b>Enable multiprocessing</b> and set <b>Maximum number of jobs</b> to 5. Leave <i>Run multiple scenarios in parallel</i> and <i>Copy scenario inputs for each job</i> unchecked.
+  b. <i>From the library properties</i> – double-click on the library name, <b>Omniscape Example</b>, in the <i>Library Explorer</i> to open the library properties window. Navigate to the <b>System</b> tab and select <b>Multiprocessing > General</b>. Mark the checkbox for <b>Enable multiprocessing</b> and set <b>Maximum number of jobs</b> to 5. Leave <i>Run multiple scenarios in parallel</i> and <i>Copy scenario inputs for each job</i> unchecked.
+
+<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot36.png">
   <br><br>
   The two are linked, so a change made in one is reflected in the other.
 </div>
-
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot36.png">
 
 <div class=indentation>
 When the scenario is not split into tiles, <i>Maximum number of jobs</i> sets the number of Julia threads used by Omniscape.jl (up to a maximum of 8). The number of threads is further reduced if it would exceed the available memory, estimated using <i>RAM per Thread (GB)</i> in the <i>Tiling Options</i> datasheet (16 GB by default). The <b>Run Log</b> records the number of threads used and whether it was reduced.
@@ -425,14 +425,14 @@ When the scenario is not split into tiles, <i>Maximum number of jobs</i> sets th
 For large landscapes, you can instead add the <i>0 - Prepare Spatial Tiling</i> stage to the <b>Pipeline</b>, before <i>1 - Omniscape</i>. The landscape is then split into tiles which are run as separate jobs in parallel, and merged back together once complete. The number and size of tiles are controlled by the <i>Tiling Options</i> datasheet under the <b>Optional</b> node. Spatial tiling is generally only beneficial for rasters larger than around 3000×3000 pixels, so it is not used in this example. For more information, see the <A href="https://apexrms.github.io/omniscape/prepMultiprocessingTransformer">spatial tiling documentation</A>.
 </div>
 
-5\.	Close the scenario and library properties windows and save the changes to the library.
+5\.	Close the scenario properties window (and the library properties window, if open) and save the changes to the library.
 
-6\.	In the Library Explorer window, right-click on the **Increased resistance** scenario and select **Run** from the context menu.
+6\.	In the *Library Explorer* window, right-click on the **Increased resistance** scenario and select **Run** from the context menu.
 
 <img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot37.png">
 
 <div class=indentation>
-  a.	The <i>Run Monitor</i> window will open, informing that the model is <i>Running</i>.
+  a.	The <i>Run Monitor</i> window will open, indicating that the model is <i>Running</i>.
 </div>
 
 <img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot38.png">
@@ -466,7 +466,7 @@ With two successful scenario runs, you will now compare their results.
 
 1\.	Ensure that both scenarios are added to the results. This is noted by a red check mark beside the scenario symbol and a bolded scenario name. 
 
-<img align="center" style="padding: 13px" width="325" src="./tutorials/images/screenshot40.png">
+<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot40.png">
 
 <div class=indentation>
 If required, right-click on the scenario(s) and select <b>Add to Results</b> from the context menu.
@@ -524,7 +524,7 @@ An ensemble is run from its own scenario, whose **Pipeline** contains *1.5 - Ens
 
 <img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42c.png">
 
-The scenarios to combine are supplied as <i>dependencies</i> of the ensemble scenario, added by dragging each scenario onto the ensemble scenario in the Library Explorer. At least two dependencies are required. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent results, and each dependency must have a <i>Normalized current flow</i> output. All dependencies must have the same extent, resolution and projection.
+The scenarios to combine are supplied as <i>dependencies</i> of the ensemble scenario, added by dragging each scenario onto the ensemble scenario in the *Library Explorer*. At least two dependencies are required. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent results, and each dependency must have a <i>Normalized current flow</i> output. All dependencies must have the same extent, resolution, and projection.
 
 <img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot42h.png">
 
@@ -547,7 +547,7 @@ When the ensemble scenario is run, *1.5 - Ensemble Connectivity* reports *Loadin
   </div>
   A pixel is included in the ensemble if at least one scenario has data there. Where some scenarios are NoData, the statistic is calculated from the scenarios that do have data, so a pixel covered by fewer scenarios is not pulled down by the missing ones.
   <br><br>
-  3. <i>Use focal window</i>, <i>Focal radius (pixels)</i> and <i>Focal function</i> – optionally smooth the combined surface with a square moving window, using the mean, sum, maximum or minimum of the pixels in the window. <i>Focal radius</i> is required when <i>Use focal window</i> is <i>Yes</i>.
+  3. <i>Use focal window</i>, <i>Focal radius (pixels)</i>, and <i>Focal function</i> – optionally smooth the combined surface with a square moving window, using the mean, sum, maximum, or minimum of the pixels in the window. <i>Focal radius</i> is required when <i>Use focal window</i> is <i>Yes</i>.
 </div>
 
 <img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42d.png">

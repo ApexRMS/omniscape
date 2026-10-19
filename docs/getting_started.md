@@ -25,25 +25,25 @@ Running **omniscape** SyncroSim requires that SyncroSim and Julia be installed o
 
 1\. Open SyncroSim Studio.
 
-2\. Select **File > Packages**.
+2\. Select **File > Local Packages**.
 
 <img align="center" style="padding: 13px" width="250" src="assets/images/screenshot1.png">
 
-3\. The *Packages* window will open, listing all the SyncroSim packages installed in your computer. To install a new package from the Package Server, click **Install**.
+3\. The *Packages* window will open, listing all the SyncroSim packages installed in your computer. To install a new package from the Package Server, click **Install from Server...**.
 
-<img align="center" style="padding: 13px" width="600" src="assets/images/screenshot2.png">
+<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot2.png">
 
 4\. A new window will open listing the packages available for install from the Package Server. To install **omniscape** SyncroSim, mark the checkbox beside the package name and click **OK**. 
 
-<img align="center" style="padding: 13px" width="600" src="assets/images/screenshot3.png">
+<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot3.png">
 
 5\.	The **omniscape** SyncroSim package uses Conda to manage the package dependencies. Upon installing the package, you will be prompted to install Conda if it is not already installed in your computer. Then, you will be prompted to create or update the Conda environment for **omniscape** SyncroSim. Click **Yes**.  
 
-<img align="center" style="padding: 13px" width="600" src="assets/images/screenshot4.png">
+<img align="center" style="padding: 13px" width="450" src="assets/images/screenshot4.png">
 
 6\.	Return to the *Packages* window, **omniscape** will now be listed along with the other installed packages, and the Conda checkbox will be marked.
 
-<img align="center" style="padding: 13px" width="600" src="assets/images/screenshot5-new.png">
+<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot5.png">
 
 ## **Next steps**
 
