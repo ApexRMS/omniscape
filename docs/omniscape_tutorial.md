@@ -281,7 +281,7 @@ i. Under the <b>Spatial</b> node, the outputs from the first and second transfor
 <br><br>
 Besides the three current flow maps, <i>Omniscape Outputs</i> holds two resistance surfaces:
 <div class=indentation>
-• <i>Classified resistance</i> – the resistance surface after reclassification by the <i>Reclass Table</i>, when <i>Write reclassified resistance</i> is <i>Yes</i>. If the resistance is not reclassified, it points to the original <i>Resistance file</i>. It is not written when the scenario is split into tiles.
+• <i>Classified resistance</i> – the resistance surface after reclassification by the <i>Reclass Table</i>, when <i>Write reclassified resistance</i> is <i>Yes</i>. If the resistance is not reclassified, it points to the original <i>Resistance file</i>.
 <br>
 • <i>Modified resistance</i> – the final resistance surface after all resistance modifiers and rescaling are applied, when <i>Write modified resistance</i> is <i>Yes</i>. It is empty when no resistance modifiers are used.
 </div>
