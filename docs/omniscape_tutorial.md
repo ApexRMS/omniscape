@@ -420,7 +420,7 @@ Next, you will enable multiprocessing for the scenario. For this example, the ru
 </div>
 
 <div class=indentation>
-When the scenario is not split into tiles, <i>Maximum number of jobs</i> sets the number of Julia threads used by Omniscape.jl (up to a maximum of 8). The number of threads is further reduced if it would exceed the available memory, estimated using <i>RAM per Thread (GB)</i> in the <i>Tiling Options</i> datasheet (16 GB by default). The <b>Run Log</b> records the number of threads used and whether it was reduced.
+When the scenario is not split into tiles, <i>Maximum number of jobs</i> sets the number of Julia threads used by Omniscape.jl (up to a maximum of 8). The number of threads is further reduced if it would exceed the total system RAM, estimated using <i>RAM per Thread (GB)</i> in the <i>Tiling Options</i> datasheet (16 GB by default). The <b>Run Log</b> records the number of threads used and whether it was reduced.
 <br><br>
 For large landscapes, you can instead add the <i>0 - Prepare Spatial Tiling</i> stage to the <b>Pipeline</b>, before <i>1 - Omniscape</i>. The landscape is then split into tiles which are run as separate jobs in parallel, and merged back together once complete. The number and size of tiles are controlled by the <i>Tiling Options</i> datasheet under the <b>Optional</b> node. Spatial tiling is generally only beneficial for rasters larger than around 3000×3000 pixels, so it is not used in this example. For more information, see the <A href="https://apexrms.github.io/omniscape/prepMultiprocessingTransformer">spatial tiling documentation</A>.
 </div>
