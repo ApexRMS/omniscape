@@ -38,7 +38,7 @@ In SyncroSim, a library is a file with extension .ssim that stores all the model
 
 2\.	Select **File > New > From Online Template...**.
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot6.png">
+<img alt="SyncroSim Studio File menu with New expanded and the From Online Template... option highlighted." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot6.png">
 
 <div class=indentation>
 a. From the list of packages, select <b>omniscape</b>.
@@ -46,7 +46,7 @@ a. From the list of packages, select <b>omniscape</b>.
 b. Select the <b>Omniscape Example</b> template library. If desired, you may edit the <i>File name</i>, and change the <i>Folder</i> by clicking on the <i>Browse</i> button. Click <b>OK</b>.
 </div>
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot7.png">
+<img alt="New From Template dialog with the omniscape 2.9.0 package and Omniscape Example template selected, and File name and Folder fields highlighted." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot7.png">
 
 <br>
 
@@ -54,11 +54,11 @@ A new library has been created based on the selected template. SyncroSim will au
 
 3\.	Double-click on the library name, **Omniscape Example**, to open the library properties window. You may also right-click on the library name and select **Open** from the context menu.
 
-<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot8.png">
+<img alt="Library Explorer with the Omniscape Example library right-clicked and Open highlighted in the context menu." align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot8.png">
 
 4\.	The **General** tab should open automatically. In this tab, the *Summary* datasheet contains the metadata for the library.
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot9.png">
+<img alt="Library properties General tab showing the Summary datasheet with the library name, owner ApexRMS, and a description of the example." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot9.png">
 
 5\.	Next, navigate to the **System** tab and open the **Tools > Julia** datasheet.
 
@@ -66,7 +66,7 @@ A new library has been created based on the selected template. SyncroSim will au
 The path to the <b>Julia executable</b> file must be specified to run <b>omniscape</b> SyncroSim. To do so, click on the <b>Browse</b> button and navigate to where Julia is installed in your computer. Its default location is <b>C:\Users\[User_Name]\AppData\Local\Programs\Julia-[version]\bin\julia.exe</b>. 
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot10.png">
+<img alt="Library properties System tab with Tools &gt; Julia selected, Run directly chosen, and the Browse button for the Julia executable highlighted." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot10.png">
 
 > **Note:** The path to the Julia executable must not contain spaces. The AppData folder is sometimes hidden. To see it, in File Explorer, select View > Show > Hidden items.
 
@@ -75,7 +75,7 @@ The path to the <b>Julia executable</b> file must be specified to run <b>omnisca
 6\.	Next, navigate to the datasheet under **Options > General**, and mark the checkbox for **Use conda**.
 
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot11.png">
+<img alt="Library properties System tab with Options &gt; General selected and the Use conda checkbox checked and highlighted." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot11.png">
 
 7\.	Close the library properties window.
 
@@ -85,11 +85,11 @@ Next, you will review the inputs of the *Reference resistance* scenario. In Sync
 
 1\.	In the *Library Explorer* window, select the pre-configured scenario **Reference resistance** and double-click it to open its properties. You may also right-click on the scenario name and select **Open** from the context menu.
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot12.png">
+<img alt="Library Explorer with the Reference resistance scenario right-clicked and Open highlighted in the context menu." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot12.png">
 
 2\.	Under the **General** tab, navigate to the **Pipeline** datasheet.
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot13.png">
+<img alt="Reference resistance scenario General tab showing the Pipeline datasheet with stages 1 - Omniscape and 2 - Categorize Connectivity Output." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot13.png">
 
 <div class=indentation>
 a. Under the <i>Stage</i> column, note that two pipeline stages are set in the following order:
@@ -119,7 +119,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   c. <i>Source file</i> – a raster file indicating which pixels correspond to sources. In this example, the sources are set through a different method, described in the next step.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot14.png">
+<img alt="Omniscape tab Required datasheet with resistance file nlcd_2016_frederick_md.tif, radius 100, and no source file selected." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot14.png">
 
 4\.	Navigate to the **Optional** node.
 
@@ -127,7 +127,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   a.	In the <i>General Options</i> datasheet, note that <i>Source from resistance</i> is set to <i>Yes</i>, enforcing that the sources be calculated from the resistance layer based on a threshold of 1 as defined by <i>R cutoff</i>. Also note that <i>Calculate normalized current</i> and <i>Calculate flow potential</i> are both set to <i>Yes</i>.
 </div>
   
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot15.png">
+<img alt="Optional &gt; General Options datasheet with Source from resistance set to Yes and R cutoff set to 1 highlighted; block size is 21." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot15.png">
 
 > **Note:** *Calculate normalized current* and *Calculate flow potential* default to *No*. The *Normalized current flow* map is only produced when *Calculate normalized current* is set to *Yes*, and both the *2 - Categorize Connectivity Output* and *1.5 - Ensemble Connectivity* stages require it. If you create a scenario from scratch rather than copying one from the template library, remember to set *Calculate normalized current* to *Yes* and set *Calculate flow potential* to *Yes* when you require that map.
 
@@ -165,7 +165,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
     </div>
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot16.png">
+<img alt="Resistance Reclassification &gt; Options datasheet with Reclassify resistance set to Yes and Write reclassified resistance set to No." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot16.png">
 
 <div class=indentation>
 <div class=indentation>
@@ -173,7 +173,7 @@ The *1 - Omniscape* pipeline stage replicates the exact structure and order of p
   </div>
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot17.png">
+<img alt="Reclass Table datasheet listing land cover class IDs and resistance values; forest classes 41-43 have a value of 1 and classes 23-24 are -9999." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot17.png">
 
 <div class=indentation>
   c. Navigate to the <b>Resistance Modifier</b> node. This is optional, and is left empty in this example, but it is worth knowing what it does.
@@ -229,7 +229,7 @@ The *2 - Categorize Connectivity Output* pipeline stage is an exclusive feature 
 
 5\.	In the *Library Explorer*, double-click on **Definitions** to open the project properties. You may also right-click on the project name and select **Open** from the context menu. 
 
-<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot18.png">
+<img alt="Library Explorer with the Definitions project right-clicked and Open highlighted in the context menu." align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot18.png">
 
 6\.	Under the *Summary* datasheet, the *Description* field highlights that the connectivity categories and thresholds used in the template library were derived from Cameron *et al.* (2022, Conservation Science and Practice).
 
@@ -241,11 +241,11 @@ The *2 - Categorize Connectivity Output* pipeline stage is an exclusive feature 
   b.	Click on the <b>Category ID</b> column to sort categories in ascending order, where <i>Impeded</i> represents areas with the least amount of flow, and <i>Channelized</i> represents areas with the greatest amount of flow.
 </div>
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot19.png">
+<img alt="Definitions project Connectivity Categories datasheet listing Impeded, Diffuse, Intensified and Channelized with category IDs 1 to 4 and descriptions." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot19.png">
 
 8\.	Return to the scenario properties window and navigate to the **Advanced** node.
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot20.png">
+<img alt="Scenario Advanced tab showing the Category Thresholds datasheet: Impeded 0-0.7, Diffuse 0.7-1.3, Intensified 1.3-1.7, Channelized 1.7-9999." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot20.png">
 
 <div class=indentation>
   a. Under <i>Options</i>, note that <i>Threshold type</i> is set to <i>Value</i>. The threshold values are then compared directly against the normalized current flow. Alternatively, <i>Quantile</i> treats each threshold as a proportion (0–1) of the distribution of values, with the break values computed from each run. This is useful when the range of the surface is not known ahead of time, as is the case for an ensemble (see <A href="#step-5">Step 5</A>).
@@ -263,7 +263,7 @@ The Omniscape Example template library already contains the results for the *Ref
 
 1\.	In the *Library Explorer* window, click on the arrow beside the **Reference resistance** scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot21.png">
+<img alt="Library Explorer with the Reference resistance scenario and its Results folder expanded to show the [4] Reference resistance results scenario." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot21.png">
 
 2\.	Double-click on the results scenario to open its properties.
 
@@ -271,7 +271,7 @@ The Omniscape Example template library already contains the results for the *Ref
 a. Click through the <b>Required</b>, <b>Optional</b>, and <b>Advanced</b> nodes and note that the results scenario is a copy of the parent scenario’s inputs, which are greyed out.
 </div> 
   
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot22.png">
+<img alt="Results scenario Omniscape tab with Required, Optional and Advanced nodes highlighted and the Required inputs greyed out." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot22.png">
 
 <div class=indentation>
 b. Navigate to the <b>Results</b> node, which lists the spatial and tabular outputs. Both pipeline stages have spatial outputs but only the second pipeline stage has tabular outputs.
@@ -292,7 +292,7 @@ You can export any spatial output by clicking on the <i>Export</i> button.
 </div>
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot23.png">
+<img alt="Results scenario Spatial node expanded to Omniscape Outputs, Ensemble and Connectivity Categories, listing output rasters with Export buttons highlighted." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot23.png">
 
 <div class=indentation>
 <div class=indentation>
@@ -302,7 +302,7 @@ You can export the tabular output by right-clicking on the data and selecting <i
 </div>
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot24.png">
+<img alt="Connectivity Categories Summary table with area and proportion per category, and a right-click menu with Export All highlighted." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot24.png">
 
 3\.	Close the results scenario properties.
 
@@ -312,11 +312,11 @@ Using the SyncroSim built-in tools, you will now visualize the outputs of the fi
 
 4\.	In the *Library Explorer* window, right-click on the **Reference resistance** scenario and select **Add to Results** from the context menu. 
 
-<img align="center" style="padding: 13px" width="375" src="./tutorials/images/screenshot25.png">
+<img alt="Library Explorer with the Reference resistance scenario right-clicked and Add to Results highlighted at the bottom of the context menu." align="center" style="padding: 13px" width="375" src="./tutorials/images/screenshot25.png">
 
 5\.	Navigate to the **Maps** tab and double-click on the first pre-configured map, **Cumulative current flow**. 
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot26.png">
+<img alt="Maps tab listing four pre-configured maps, with 1 - Cumulative current flow selected." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot26.png">
 
 <div class=indentation>
 The cumulative current flow represents the total current flowing through the landscape. To inspect the map, consider the following:
@@ -328,7 +328,7 @@ The cumulative current flow represents the total current flowing through the lan
   b.	<i>Toolbar</i> – displayed along the top of the window. Includes zoom, pan, and per-pixel information tooltip.
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot27.png">
+<img alt="Cumulative current flow map in Amperes, with the legend and toolbar highlighted; bright high-flow corridors stand out against dark low-flow areas." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot27.png">
 
 6\.	Close the map window and view the following two maps.
 
@@ -336,13 +336,13 @@ The cumulative current flow represents the total current flowing through the lan
   a.	<b>Flow potential</b> represents current flow under the null condition of resistance set to 1 for the entire landscape. 
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot28.png">
+<img alt="Flow potential map showing broad bands of high flow potential (yellow) with lower values (purple) concentrated in the center of the landscape." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot28.png">
 
 <div class=indentation>
   b.	<b>Normalized current flow</b> is calculated as cumulative current divided by flow potential, and therefore represents where there is more or less current than expected under null resistance conditions.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot29.png">
+<img alt="Normalized current flow map with a legend from 0 to over 4; narrow bright corridors of higher-than-expected flow cross a purple background." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot29.png">
 
 <div class=indentation>
 The <b>Maps</b> tab also includes an <i>Inputs</i> group, with maps of the <i>Sources</i>, the <i>Resistance</i> surface (the <i>Classified resistance</i> output described above), and the <i>Modified resistance</i> surface. In this example, the sources are calculated from the resistance layer and no resistance modifiers are used, so only the <i>Resistance</i> map is populated.
@@ -354,7 +354,7 @@ Next, you will visualize the outputs of the second transformer, which takes the 
 
 7\.	View the **Connectivity categories** map.
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot30.png">
+<img alt="Connectivity categories map showing mostly grey Impeded and blue Diffuse areas, crossed by red Channelized corridors with patches of green Intensified." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot30.png">
 
 8\.	Keep the map open for comparison, and from the *Library Explorer* window navigate to the **Charts** tab to view the **Area (ha)** chart. 
 
@@ -363,7 +363,7 @@ Note that it summarizes the amount of area per connectivity category.
 Alternatively, a <b>Proportion of area</b> summary is available.
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot31.png">
+<img alt="Area (ha) column chart for Reference resistance: Impeded is largest at about 25,000 ha, followed by Diffuse, Channelized, then Intensified." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot31.png">
 
 9\.	Close all plot windows.
 
@@ -375,13 +375,13 @@ Next, you will learn how to create a scenario and run it to generate results. Th
 
 1\.	Right-click on the existing scenario and select **Copy** from the context menu. 
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot32.png">
+<img alt="Library Explorer with the Reference resistance scenario right-clicked and Copy highlighted in the context menu." align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot32.png">
 
 <div class=indentation>
 Then, right-click anywhere inside the <i>Library Explorer</i> window and select <b>Paste</b>.
 </div>
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot33.png">
+<img alt="Library Explorer right-click context menu with Paste highlighted." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot33.png">
 
 2\.	Double-click on the new scenario to open its properties.
 
@@ -391,7 +391,7 @@ Then, right-click anywhere inside the <i>Library Explorer</i> window and select 
   b.	Change the <b>Description</b> to <i>Resistance values for non-forest land cover types were increased by one order of magnitude. All other configuration options for Omniscape are equal to those implemented in the Omniscape.jl example</i>.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot34.png">
+<img alt="Increased resistance scenario Summary datasheet with the new Name and Description fields highlighted." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot34.png">
 
 3\.	Navigate to the **Optional** node and under the **Resistance Reclassification** node, open the **Reclass Table** datasheet.
 
@@ -399,7 +399,7 @@ Then, right-click anywhere inside the <i>Library Explorer</i> window and select 
   a.	Under the <b>Resistance value</b> column, increase values by one order of magnitude, except for <i>Land cover classes</i> 41, 42, and 43, which represent forest classes.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot35.png">
+<img alt="Increased resistance Reclass Table with the Resistance value column highlighted; non-forest values are ten times higher while classes 41-43 remain 1." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot35.png">
 
 <br>
 
@@ -410,11 +410,11 @@ Next, you will enable multiprocessing for the scenario. For this example, the ru
 <div class=indentation>
   a. <i>From the toolbar</i> – click the <b>Multiprocessing</b> button on the toolbar at the top of the window so that it is highlighted, then set the number of jobs to 5 in the drop-down box beside it.
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot36a.png">
+<img alt="SyncroSim Studio toolbar with the Multiprocessing button highlighted and the number of jobs set to 5." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot36a.png">
   <br><br>
   b. <i>From the library properties</i> – double-click on the library name, <b>Omniscape Example</b>, in the <i>Library Explorer</i> to open the library properties window. Navigate to the <b>System</b> tab and select <b>Multiprocessing > General</b>. Mark the checkbox for <b>Enable multiprocessing</b> and set <b>Maximum number of jobs</b> to 5. Leave <i>Run multiple scenarios in parallel</i> and <i>Copy scenario inputs for each job</i> unchecked.
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot36.png">
+<img alt="Library properties System tab, Multiprocessing &gt; General, with Enable multiprocessing checked and Maximum number of jobs set to 5." align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot36.png">
   <br><br>
   The two are linked, so a change made in one is reflected in the other.
 </div>
@@ -429,13 +429,13 @@ For large landscapes, you can instead add the <i>0 - Prepare Spatial Tiling</i> 
 
 6\.	In the *Library Explorer* window, right-click on the **Increased resistance** scenario and select **Run** from the context menu.
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot37.png">
+<img alt="Library Explorer with the Increased resistance scenario right-clicked and Run highlighted in the context menu." align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot37.png">
 
 <div class=indentation>
   a.	The <i>Run Monitor</i> window will open, indicating that the model is <i>Running</i>.
 </div>
 
-<img align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot38.png">
+<img alt="Run Monitor window showing the Increased resistance scenario with a Status of Running." align="center" style="padding: 13px" width="400" src="./tutorials/images/screenshot38.png">
 
 <div class=indentation>
   b.	Along the bottom-right of the window, a progress bar will provide further details.
@@ -456,7 +456,7 @@ For large landscapes, you can instead add the <i>0 - Prepare Spatial Tiling</i> 
 
 7\.	When the run is complete, the *Status* will be updated to *Done*. You can inspect the **Run Log**, which returns the total run time for the scenario, along with details of how the run was configured. 
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot39.png">
+<img alt="Run Monitor with Status Done and the Run Log open, showing the total simulation time of about 10 minutes highlighted." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot39.png">
 
 <br>
 
@@ -466,7 +466,7 @@ With two successful scenario runs, you will now compare their results.
 
 1\.	Ensure that both scenarios are added to the results. This is noted by a red check mark beside the scenario symbol and a bolded scenario name. 
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot40.png">
+<img alt="Library Explorer with both Reference resistance and Increased resistance scenarios bolded and marked with red check marks." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot40.png">
 
 <div class=indentation>
 If required, right-click on the scenario(s) and select <b>Add to Results</b> from the context menu.
@@ -474,7 +474,7 @@ If required, right-click on the scenario(s) and select <b>Add to Results</b> fro
 
 2\.	First, view the **Area (ha)** chart.
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot41.png">
+<img alt="Area (ha) column chart comparing Reference and Increased resistance scenarios across the four connectivity categories." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot41.png">
 
 <div class=indentation>
 Note that the increase in resistance resulted in a small increase in the amount of <i>Impeded</i> and <i>Channelized</i> areas, and a decrease in the amount of <i>Diffuse</i> and <i>Intensified</i> areas.  
@@ -486,7 +486,7 @@ Note that the increase in resistance resulted in a small increase in the amount 
 Zoom in and pan through the map and try to identify where across the landscape those changes in connectivity occurred.
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot42.png">
+<img alt="Side-by-side Connectivity categories maps for Reference and Increased resistance, zoomed in; Channelized corridors appear slightly wider under increased resistance." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot42.png">
 
 <div class=indentation>
 Visually identifying areas of change between scenarios may not be straightforward. For more quantitative tools to compare changes in connectivity, see the next tutorial <A href="omniscapeImpact">Measuring the impact of connectivity change with <b>omniscapeImpact</b></A>.
@@ -512,7 +512,7 @@ Each scenario that goes into an ensemble represents an <i>ensemble member</i>, t
   c. <i>Ensemble Weights</i> – under the <b>Ensemble Connectivity</b> node of the ensemble scenario, giving the relative weight of each member. A weight greater than 1 increases a member's influence and a weight less than 1 decreases it.
 </div>
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42e.png">
+<img alt="Ensemble scenario Omniscape tab with Ensemble Weights selected, giving the Specialist member a weight of 2." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42e.png">
 
 Weighting by member rather than by scenario means the same scenario can carry different weights in different ensembles. Any member without a row in *Ensemble Weights*, and any scenario that does not declare a member, is weighted 1, so an ensemble with no weights is an unweighted one. Each member may be represented by only one scenario in an ensemble, and every weight must match a member represented by one of the scenarios being combined, otherwise the run stops with an error.
 
@@ -522,11 +522,11 @@ Weighting by member rather than by scenario means the same scenario can carry di
 
 An ensemble is run from its own scenario, whose **Pipeline** contains *1.5 - Ensemble Connectivity* in place of *1 - Omniscape*, usually followed by *2 - Categorize Connectivity Output*.
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42c.png">
+<img alt="Ensemble scenario Pipeline datasheet with stage 1.5 - Ensemble Connectivity followed by 2 - Categorize Connectivity Output." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42c.png">
 
 The scenarios to combine are supplied as <i>dependencies</i> of the ensemble scenario, added by dragging each scenario onto the ensemble scenario in the *Library Explorer*. At least two dependencies are required. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent results, and each dependency must have a <i>Normalized current flow</i> output. All dependencies must have the same extent, resolution, and projection.
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot42h.png">
+<img alt="Library Explorer showing the Ensemble scenario's Dependencies folder containing the Reference resistance and Increased resistance scenarios." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot42h.png">
 
 <br>
 
@@ -550,7 +550,7 @@ When the ensemble scenario is run, *1.5 - Ensemble Connectivity* reports *Loadin
   3. <i>Use focal window</i>, <i>Focal radius (pixels)</i>, and <i>Focal function</i> – optionally smooth the combined surface with a square moving window, using the mean, sum, maximum, or minimum of the pixels in the window. <i>Focal radius</i> is required when <i>Use focal window</i> is <i>Yes</i>.
 </div>
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42d.png">
+<img alt="Ensemble Options datasheet with Combination function Weighted Mean, Standardize inputs Yes, Use focal window No, and Focal function Mean." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot42d.png">
 
 The result is saved as the *Ensemble connectivity* raster, in the *Ensemble* datasheet under **Results > Spatial**, and can be viewed from the **Maps** tab. The **Run Log** records the combination options and the weight used for each scenario.
 
@@ -562,6 +562,6 @@ When *2 - Categorize Connectivity Output* follows *1.5 - Ensemble Connectivity* 
 
 Because an ensemble of standardized surfaces is on a different scale from normalized current flow, thresholds chosen for normalized current flow will usually not suit it. Instead, set <i>Threshold type</i> to <i>Quantile</i> and give each category's minimum and maximum as proportions of the distribution of values, for example: <i>Impeded</i> 0 – 0.2, <i>Diffuse</i> 0.2 – 0.7, <i>Intensified</i> 0.7 – 0.9, and <i>Channelized</i> 0.9 – 1. The break values are then computed from each run and recorded in the <i>Minimum value</i> and <i>Maximum value</i> columns of the <i>Connectivity Categories Summary</i> datasheet, under the <b>Results > Tabular</b> node.
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot42j.png">
+<img alt="Ensemble results Connectivity Categories Summary with quantile-based minimum and maximum values, area, and proportions of 0.2, 0.5, 0.2 and 0.1." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot42j.png">
 
 <br><br><br>

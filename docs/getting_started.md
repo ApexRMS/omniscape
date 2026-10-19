@@ -27,23 +27,23 @@ Running **omniscape** SyncroSim requires that SyncroSim and Julia be installed o
 
 2\. Select **File > Local Packages**.
 
-<img align="center" style="padding: 13px" width="250" src="assets/images/screenshot1.png">
+<img alt="SyncroSim Studio File menu expanded, with the Local Packages option highlighted near the bottom of the list." align="center" style="padding: 13px" width="250" src="assets/images/screenshot1.png">
 
 3\. The *Packages* window will open, listing all the SyncroSim packages installed in your computer. To install a new package from the Package Server, click **Install from Server...**.
 
-<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot2.png">
+<img alt="Local Packages window listing installed packages such as omniscape and omniscapeImpact, with the Install from Server button highlighted." align="center" style="padding: 13px" width="550" src="assets/images/screenshot2.png">
 
 4\. A new window will open listing the packages available for install from the Package Server. To install **omniscape** SyncroSim, mark the checkbox beside the package name and click **OK**. 
 
-<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot3.png">
+<img alt="Install from Server dialog with the checkbox beside omniscape version 2.9.0 selected and the OK button highlighted." align="center" style="padding: 13px" width="550" src="assets/images/screenshot3.png">
 
 5\.	The **omniscape** SyncroSim package uses Conda to manage the package dependencies. Upon installing the package, you will be prompted to install Conda if it is not already installed in your computer. Then, you will be prompted to create or update the Conda environment for **omniscape** SyncroSim. Click **Yes**.  
 
-<img align="center" style="padding: 13px" width="450" src="assets/images/screenshot4.png">
+<img alt="Conda Environment dialog asking to create or update the conda environment for the omniscape package, with the Yes button highlighted." align="center" style="padding: 13px" width="450" src="assets/images/screenshot4.png">
 
 6\.	Return to the *Packages* window, **omniscape** will now be listed along with the other installed packages, and the Conda checkbox will be marked.
 
-<img align="center" style="padding: 13px" width="550" src="assets/images/screenshot5.png">
+<img alt="Local Packages window with omniscape version 2.9.0 highlighted in the list and its Conda checkbox marked." align="center" style="padding: 13px" width="550" src="assets/images/screenshot5.png">
 
 ## **Next steps**
 
@@ -51,6 +51,6 @@ Once the requirements have been installed, the following tutorials will cover th
 1. <a href="./tutorials/omniscape">Reproducing the Omniscape.jl example with **omniscape** SyncroSim</a>
 2. <a href="./tutorials/omniscapeImpact">Measuring the impact of connectivity change with <b>omniscapeImpact</b></a>
 
-<img align="center" style="padding: 13px" width="800" src="assets/images/screenshot6.png">
+<img alt="SyncroSim Studio map view showing two omniscape output panels side by side: normalized current flow and connectivity categories, with their legends." align="center" style="padding: 13px" width="800" src="assets/images/screenshot6.png">
 
 <br><br><br>

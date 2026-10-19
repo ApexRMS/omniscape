@@ -42,21 +42,21 @@ The *Baseline* and *Alternative* scenarios being compared must be directly compa
 
 2\.	Select **File > Local Packages**.
 
-<img align="center" style="padding: 13px" width="250" src="./tutorials/images/screenshot43.png">
+<img alt="SyncroSim Studio File menu open with Local Packages highlighted." align="center" style="padding: 13px" width="250" src="./tutorials/images/screenshot43.png">
 
 3\.	The *Packages* window will open, listing all the SyncroSim packages installed in your computer. To install a new package from the Package Server, click **Install from Server**.
 
-<img align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot44.png">
+<img alt="Local Packages window listing installed packages, with the Install from Server button highlighted." align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot44.png">
 
 4\.	A new window will open listing the packages available for install from the Package Server. To install **omniscapeImpact**, mark the checkbox beside the package name and click **OK**. 
 
-<img align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot45.png">
+<img alt="Install from Server dialog with the omniscapeImpact package checkbox selected and the OK button highlighted." align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot45.png">
 
 5\.	The **omniscapeImpact** package uses the Omniscape Conda environment to manage the package dependencies. If you are prompted to create or update the Conda environment, click **Yes**.
 
 6\.	Return to the *Packages* window. **omniscapeImpact** will now be listed along with the other installed packages.
 
-<img align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot47.png">
+<img alt="Local Packages window with omniscapeImpact version 2.1.1 highlighted in the list of installed packages." align="center" style="padding: 13px" width="550" src="./tutorials/images/screenshot47.png">
 
 <br>
 
@@ -64,7 +64,7 @@ The *Baseline* and *Alternative* scenarios being compared must be directly compa
 
 1\.	To download the **omniscapeImpact** template library, select **File > New > From Online Template...**.
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot48.png">
+<img alt="SyncroSim Studio File menu with New expanded and From Online Template highlighted." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot48.png">
 
 <div class=indentation>
   a.	From the list of packages, select <b>omniscapeImpact</b>.
@@ -72,7 +72,7 @@ The *Baseline* and *Alternative* scenarios being compared must be directly compa
   b.	Select the <b>Omniscape Impact</b> template library. If desired, you may edit the <i>File name</i>, and change the <i>Folder</i> by clicking on the <i>Browse</i> button. Click <b>OK</b>.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot49.png">
+<img alt="New From Template dialog with the omniscapeImpact package and Omniscape Example template selected, plus the File name and Folder fields highlighted." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot49.png">
 
 <br>
 
@@ -82,7 +82,7 @@ A new library will be created based on the selected template, and SyncroSim will
 
 2\.	Expand the **omniscape** folder and note that it contains three scenarios.
 
-<img align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot51.png">
+<img alt="Library Explorer with the Omniscape folder expanded, showing the Reference, Increased and Decreased resistance scenarios." align="center" style="padding: 13px" width="300" src="./tutorials/images/screenshot51.png">
 
 <div class=indentation>
 The first two scenarios were covered in the tutorial <A href="omniscape">Reproducing the Omniscape.jl example with <b>omniscape</b> SyncroSim</A>. 
@@ -98,7 +98,7 @@ The additional scenario, <i>Decreased resistance</i>, represents the case where 
   b.	<i>Impact of decreased resistance</i> – compares the <i>Reference resistance</i> and <i>Decreased resistance</i> scenarios.
 </div>
 
-<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot52.png">
+<img alt="Library Explorer with the OmniscapeImpact folder expanded, showing the Impact of increased resistance and Impact of decreased resistance scenarios." align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot52.png">
 
 4\.	Double-click on **Impact of increased resistance** to open the scenario properties.
 
@@ -108,7 +108,7 @@ The additional scenario, <i>Decreased resistance</i>, represents the case where 
 Note that it lists one pipeline stage, <i>3 - Connectivity Impact Assessment</i>.
 </div>
 
-<img align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot53.png">
+<img alt="Scenario properties for Impact of increased resistance, General tab, Pipeline datasheet listing stage 3 - Connectivity Impact Assessment with run order 1." align="center" style="padding: 13px" width="500" src="./tutorials/images/screenshot53.png">
 
 6\.	Close the scenario properties and, in the *Library Explorer* window, expand the **Impact of increased resistance** scenario to expose its **Dependencies** folder.
 
@@ -123,7 +123,7 @@ The two scenarios to be compared are supplied as <i>dependencies</i> of the impa
 To swap the <i>Baseline</i> and <i>Alternative</i>, reorder the dependencies. The <b>Run Log</b> for each run records which scenario was used as which. Adding a scenario (rather than one of its results) as a dependency automatically uses that scenario's most recent results. If more than two dependencies are added, only the first two are used.
 </div>
 
-<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot54.png">
+<img alt="Library Explorer with the Impact of increased resistance Dependencies folder expanded, listing Reference resistance first and Increased resistance second." align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot54.png">
 
 7\.	Collapse the scenario.
 
@@ -135,7 +135,7 @@ The Omniscape Impact template library already contains the results for all its s
 
 1\.	In the *Library Explorer* window, click on the arrow beside the **Impact of increased resistance** scenario to expose the *Results* folder; repeat the same action to expose the results scenario. 
 
-<img align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot55.png">
+<img alt="Library Explorer with the Impact of increased resistance scenario and its Results folder expanded, showing the results scenario." align="center" style="padding: 13px" width="350" src="./tutorials/images/screenshot55.png">
 
 2\.	Double-click on the results scenario to open its properties.
 
@@ -146,11 +146,11 @@ The Omniscape Impact template library already contains the results for all its s
 <div class=indentation>
   a.	<i>Overall</i> – represents per-pixel change in normalized current flow (<i>Normalized current difference</i>) or in connectivity category (<i>Cross-category difference</i>). When two ensemble scenarios are compared, <i>Ensemble connectivity difference</i> is populated instead of <i>Normalized current difference</i>.
 
-  <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot56.png">
+  <img alt="Omniscape Impact tab of the results scenario with the Spatial Overall node selected, listing Normalized current difference and Cross-category difference TIF files." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot56.png">
   <br><br>
   b.	<i>Per Category</i> – represents per-pixel loss, gain, and no change for each connectivity category.
 
-  <img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot57.png">
+  <img alt="Omniscape Impact tab with the Spatial Per Category node selected, listing a connectivity difference TIF file for each of the four connectivity categories." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot57.png">
 </div>
 
 
@@ -164,7 +164,7 @@ The Omniscape Impact template library already contains the results for all its s
   c.	<i>Jaccard Dissimilarity</i> – represents the dissimilarity between the <i>Baseline</i> and <i>Alternative</i> scenarios for each connectivity category. For each connectivity category, the Jaccard dissimilarity is calculated as 1 minus the ratio between the number of pixels in that category in both scenarios and the number of pixels in that category in either scenario.
 </div>
 
-<img align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot58.png">
+<img alt="Omniscape Impact tab with the Tabular Differences Summary node selected, showing area and proportion differences for each connectivity category." align="center" style="padding: 13px" width="600" src="./tutorials/images/screenshot58.png">
 
 6\.	Close the scenario properties and collapse the results and scenario folders.
 
@@ -174,11 +174,11 @@ You will now visualize the tabular outputs of <b>omniscapeImpact</b>.
 
 7\.	In the *Library Explorer* window, select the scenarios **Impact of increased resistance** and **Impact of decreased resistance**, right-click, and select **Add to Results** from the context menu. 
 
-<img align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot59.png">
+<img alt="Library Explorer with both impact scenarios selected and the right-click context menu open, with Add to Results highlighted." align="center" style="padding: 13px" width="450" src="./tutorials/images/screenshot59.png">
 
 8\.	Navigate to the **Charts** tab and double-click the **Area difference** chart. 
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot60.png">
+<img alt="Area difference column chart by connectivity category; increased resistance shows small changes, while decreased resistance shows larger opposite changes." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot60.png">
 
 <div class=indentation>
 Note that the two scenarios had opposite effects on connectivity. 
@@ -194,7 +194,7 @@ A <b>Proportion difference</b> chart is also available, summarizing the same cha
 
 9\.	Close the *Area difference* chart and open the **Jaccard dissimilarity** chart.
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot61.png">
+<img alt="Jaccard dissimilarity column chart by connectivity category; decreased resistance bars are higher than increased resistance in every category, peaking at Intensified." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot61.png">
 
 <div class=indentation>
 Note that a similar pattern is reflected here, with <i>Impact of decreased resistance</i> showing greater dissimilarity to the <i>Baseline</i> scenario compared to <i>Impact of increased resistance</i>.
@@ -209,16 +209,16 @@ Next, for a visual confirmation of the quantitative changes summarized by area a
 <div class=indentation>
 The <i>Normalized current difference</i> summarizes continuous change in current between the <i>Baseline</i> and <i>Alternative</i> scenarios.
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62a.png">
+<img alt="Side-by-side Normalized current difference maps; increased resistance shows mostly small negative change, while decreased resistance shows strong positive change along corridors." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62a.png">
 <br><br>
 In turn, the <i>Cross-category difference</i> map highlights pixels where the change in current represented a change in connectivity category. For example, a change from <i>Impeded</i> to <i>Diffuse</i> would represent a <i>1-category gain</i>, while a change from <i>Channelized</i> to <i>Diffuse</i> would represent a <i>2-category loss</i>.
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62b.png">
+<img alt="Side-by-side Cross-category difference maps; increased resistance shows scattered changes, while decreased resistance shows larger patches of category gains and losses." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot62b.png">
 </div>
 
 11\.	Close the *Normalized current difference* map and open the **Per category difference** map.
 
-<img align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot63.png">
+<img alt="Per category difference maps showing loss, no change and gain for each of the four connectivity categories under both impact scenarios." align="center" style="padding: 13px" width="650" src="./tutorials/images/screenshot63.png">
 
 <div class=indentation>
 The <i>Per category difference</i> map represents per-pixel losses and gains for each category. Together with the <i>Cross-category difference</i> map, it can be used to identify transitions between connectivity categories.
