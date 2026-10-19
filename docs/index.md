@@ -29,7 +29,7 @@ permalink: /
 ## Requirements
 
 The latest version of **omniscape** SyncroSim has two requirements:
-* SyncroSim [version 3.0](https://syncrosim.com/download/){:target="_blank"} or greater
+* SyncroSim [version 3.1.0](https://syncrosim.com/download/){:target="_blank"} or greater
 * Julia [version 1.9](https://julialang.org/downloads/){:target="_blank"} or greater
 
 Instructions for installing the above requirements are provided on the [Getting Started](https://apexrms.github.io/omniscape/getting_started.html) page.
